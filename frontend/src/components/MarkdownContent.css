@@ -1,0 +1,226 @@
+/* ==========================================================================
+   MarkdownContent.css — Clean Minimalist Light Typography & KaTeX Math
+   ========================================================================== */
+
+.dev-markdown {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  font-size: 13.5px;
+  line-height: 1.68;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.dev-markdown strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+.dev-markdown em {
+  color: #374151;
+  font-style: italic;
+}
+
+.dev-inline-code {
+  font-family: var(--font-mono, "JetBrains Mono", Consolas, monospace);
+  background-color: #f3f4f6;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 12px;
+}
+
+.dev-markdown-link {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+
+.dev-markdown-link:hover {
+  color: #1d4ed8;
+}
+
+/* Headings */
+.dev-markdown-h1 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 18px 0 10px;
+  color: #111827;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+}
+
+.dev-markdown-h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 14px 0 8px;
+  color: #111827;
+}
+
+.dev-markdown-h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+  color: #1f2937;
+}
+
+/* Paragraphs */
+.dev-markdown-p {
+  margin: 8px 0;
+}
+
+.dev-markdown-p:first-child {
+  margin-top: 0;
+}
+
+.dev-markdown-p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.dev-markdown-ul,
+.dev-markdown-ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.dev-markdown-ul li,
+.dev-markdown-ol li {
+  margin: 4px 0;
+}
+
+/* Blockquote */
+.dev-markdown-blockquote {
+  border-left: 3px solid #111827;
+  background-color: #f9fafb;
+  padding: 8px 14px;
+  margin: 10px 0;
+  border-radius: 0 6px 6px 0;
+  color: #4b5563;
+  font-style: italic;
+}
+
+/* Code Block */
+.dev-code-block-wrapper {
+  margin: 12px 0;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.dev-code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dev-code-lang-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.dev-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dev-code-copy-btn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.dev-code-pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono, "JetBrains Mono", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #111827;
+  background-color: #f9fafb;
+}
+
+/* Math Block ($$...$$ and \[...\]) */
+.dev-math-block-wrapper {
+  margin: 14px 0;
+  padding: 14px 18px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.dev-math-block {
+  display: inline-block;
+  min-width: 100%;
+  color: #111827;
+}
+
+.dev-math-block .katex-display {
+  margin: 0.2em 0 !important;
+}
+
+/* Inline Math ($...$ and \(...\)) */
+.dev-katex-inline {
+  display: inline-block;
+  color: #111827;
+  vertical-align: baseline;
+  margin: 0 1px;
+}
+
+/* Table */
+.dev-table-responsive-wrapper {
+  overflow-x: auto;
+  margin: 14px 0;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.dev-markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  background-color: #ffffff;
+}
+
+.dev-markdown-table th {
+  padding: 9px 12px;
+  font-weight: 600;
+  background-color: #f9fafb;
+  color: #111827;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dev-markdown-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+
+.dev-markdown-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dev-markdown-table tr:hover td {
+  background-color: #f9fafb;
+}
