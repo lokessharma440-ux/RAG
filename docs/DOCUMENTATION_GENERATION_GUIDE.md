@@ -70,3 +70,4 @@ When no author-approved PRD exists in the repository, DevMind AI automatically g
 2. **Review:** The document appears in the Cosmic Review Workspace with side-by-side markdown and rendered HTML preview.
 3. **Edit:** Users can click **Edit**, make custom amendments, and click **Save**. The document is updated in MongoDB and tagged as `userEdited: true`.
 4. **Export:** Users can download the file directly, export all approved documents as a ZIP bundle, or open an automated GitHub PR.
+

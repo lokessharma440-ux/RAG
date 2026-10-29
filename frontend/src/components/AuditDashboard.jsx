@@ -1031,30 +1031,37 @@ function OverviewSection({ analysis, codebase }) {
         <div className="audit-metric-card">
           <div className="audit-metric-label">Critical</div>
           <div className="audit-metric-value critical">{counts.CRITICAL || 0}</div>
+          <div className="audit-metric-sub">{counts.CRITICAL ? 'Requires immediate fix' : 'No critical risks'}</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">High</div>
           <div className="audit-metric-value high">{counts.HIGH || 0}</div>
+          <div className="audit-metric-sub">{counts.HIGH ? 'Prioritize review' : 'No high risks'}</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">Medium</div>
           <div className="audit-metric-value medium">{counts.MEDIUM || 0}</div>
+          <div className="audit-metric-sub">Improvement opportunities</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">Low / Info</div>
           <div className="audit-metric-value low">{(counts.LOW || 0) + (counts.INFO || 0)}</div>
+          <div className="audit-metric-sub">Best practice notices</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">Recommendations</div>
           <div className="audit-metric-value emerald">{(analysis.recommendations || []).length}</div>
+          <div className="audit-metric-sub">Actionable fixes</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">Files Indexed</div>
           <div className="audit-metric-value">{codebase?.stats?.indexedFiles || '—'}</div>
+          <div className="audit-metric-sub">Analyzed commit</div>
         </div>
         <div className="audit-metric-card">
           <div className="audit-metric-label">Analysis Date</div>
-          <div className="audit-metric-value" style={{ fontSize: 14, lineHeight: 1.4 }}>{formatDate(analysis.completedAt)}</div>
+          <div className="audit-metric-value date">{formatDate(analysis.completedAt)}</div>
+          <div className="audit-metric-sub">Status: {analysis.status || 'completed'}</div>
         </div>
       </div>
 
@@ -1126,13 +1133,26 @@ function OverviewSection({ analysis, codebase }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AuditDashboard({ codebase, onBack, showToast, onViewFile }) {
+export default function AuditDashboard({
+  codebase,
+  onBack,
+  showToast,
+  onViewFile,
+  initialTab = 'overview',
+  showBackBtn = false
+}) {
   const [analysis, setAnalysis] = useState(null);
   const [analysisId, setAnalysisId] = useState(null);
   const [analysisStatus, setAnalysisStatus] = useState({ status: 'idle' });
   const [loadingAnalysis, setLoadingAnalysis] = useState(true);
   const [triggering, setTriggering] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const repositoryId = codebase?._id;
 
@@ -1224,9 +1244,15 @@ export default function AuditDashboard({ codebase, onBack, showToast, onViewFile
       {/* Repo Header */}
       <div className="audit-repo-header">
         <div className="audit-repo-meta">
-          <button type="button" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, marginBottom: 4 }} onClick={onBack}>
-            <ArrowLeft size={13} /> Back to Codebase
-          </button>
+          {showBackBtn && (
+            <button
+              type="button"
+              className="audit-back-btn"
+              onClick={onBack}
+            >
+              <ArrowLeft size={13} /> Back to Codebase
+            </button>
+          )}
           <div className="audit-repo-name">
             <GitBranch size={18} className="text-cyan" />
             {codebase?.name || 'Repository'}
@@ -1241,8 +1267,8 @@ export default function AuditDashboard({ codebase, onBack, showToast, onViewFile
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="audit-header-actions-col">
+          <div className="audit-header-actions-row">
             <StatusPill status={analysisStatus.status} />
             <button
               type="button"
@@ -1260,7 +1286,7 @@ export default function AuditDashboard({ codebase, onBack, showToast, onViewFile
             </button>
           </div>
           {codebase?.status !== 'ready' && (
-            <span style={{ fontSize: 11, color: 'var(--amber-400)' }}>
+            <span className="audit-indexing-warning">
               ⚠ Repository must be fully indexed first
             </span>
           )}

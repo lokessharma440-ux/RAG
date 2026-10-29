@@ -339,3 +339,4 @@ Creates a dedicated feature branch and opens a Pull Request on GitHub.
 
 - **Method:** `GET`
 - **Route:** `/:repositoryId/github/publications`
+

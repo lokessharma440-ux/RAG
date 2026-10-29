@@ -110,3 +110,4 @@ Existing RAG capabilities, local vector embeddings, multi-tenant isolation, and 
 1. **GitHub Private Repositories:** The current workflow requires a personal access token (PAT) with `repo` scope for private repos. Future phases will support GitHub App OAuth installations.
 2. **Language Coverage:** AST symbol parsing is optimised for JavaScript, TypeScript, Python, and JSON. Other languages (Go, Rust, Java) utilize line-based heuristic and regex chunking.
 3. **Monorepo Depth:** Deep nested polyrepo workspaces inside single repositories are analyzed under unified root context; dedicated sub-package manifests can be partitioned in future updates.
+

@@ -64,3 +64,4 @@ Before pushing each file, the publisher checks if the target file already exists
 For developers working without GitHub credentials or auditing private local repositories imported via ZIP archives:
 - **Download Markdown:** Download individual `.md` files directly.
 - **Download ZIP Bundle:** Export all approved documentation files packaged with a `MANIFEST.json`.
+

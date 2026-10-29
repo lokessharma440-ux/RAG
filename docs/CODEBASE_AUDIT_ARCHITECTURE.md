@@ -155,3 +155,4 @@ The frontend is implemented in React 19 within the existing cosmic dark-mode the
   - Safe GitHub Pull Request dialog with transient token input.
   - Historical audit run explorer.
 - **Deep Code Navigation:** Clicking any file location in the findings list automatically switches to the `Code Explorer & Viewer` tab and highlights the exact start/end line range.
+

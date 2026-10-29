@@ -1075,3 +1075,4 @@ router.get('/:repositoryId/github/publications', async (req, res) => {
 });
 
 export default router;
+
