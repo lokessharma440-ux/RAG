@@ -187,9 +187,14 @@ export async function generateAIFixPrompt({
     throw new Error('Repository not found or access denied.');
   }
 
-  // 2. Fetch Latest Analysis
-  const analysis = await RepositoryAnalysis.findOne({ repositoryId, ownerUserId })
+  // 2. Fetch Latest Analysis (prefer completed)
+  let analysis = await RepositoryAnalysis.findOne({ repositoryId, ownerUserId, status: 'completed' })
     .sort({ createdAt: -1 });
+
+  if (!analysis) {
+    analysis = await RepositoryAnalysis.findOne({ repositoryId, ownerUserId })
+      .sort({ createdAt: -1 });
+  }
 
   if (!analysis) {
     throw new Error('No analysis record found for this repository. Run a codebase audit first.');
@@ -200,14 +205,20 @@ export async function generateAIFixPrompt({
   let selectedFindings = [];
 
   if (mode === 'single_issue') {
-    if (!findingIds.length) {
-      throw new Error('At least one finding ID must be provided for single_issue mode.');
+    if (findingIds.length > 0) {
+      const found = allFindings.find((f) => f.id === findingIds[0]);
+      if (found) {
+        selectedFindings = [found];
+      }
     }
-    const found = allFindings.find((f) => f.id === findingIds[0]);
-    if (!found) {
-      throw new Error(`Finding '${findingIds[0]}' was not found in the latest analysis.`);
+    // Fallback if ID wasn't provided or wasn't found in current analysis
+    if (!selectedFindings.length) {
+      if (allFindings.length > 0) {
+        selectedFindings = [allFindings[0]];
+      } else {
+        throw new Error('No findings available in repository analysis to generate a fix prompt.');
+      }
     }
-    selectedFindings = [found];
   } else if (mode === 'security') {
     selectedFindings = allFindings.filter((f) =>
       ['authentication', 'database'].includes(f.category) ||
@@ -224,20 +235,29 @@ export async function generateAIFixPrompt({
     if (!selectedFindings.length) {
       selectedFindings = allFindings.filter((f) => f.category === 'documentation');
     }
+    if (!selectedFindings.length) {
+      selectedFindings = allFindings.slice(0, 5);
+    }
   } else if (mode === 'full_project') {
     // Select actionable findings (Critical, High, Medium) or user-specified
     selectedFindings = findingIds.length
       ? allFindings.filter((f) => findingIds.includes(f.id))
       : allFindings.filter((f) => ['CRITICAL', 'HIGH', 'MEDIUM'].includes(f.severity));
+    if (!selectedFindings.length) {
+      selectedFindings = allFindings.slice(0, 10);
+    }
   } else {
     // related_issues or test_generation
     selectedFindings = findingIds.length
       ? allFindings.filter((f) => findingIds.includes(f.id))
       : allFindings.slice(0, 5);
+    if (!selectedFindings.length) {
+      selectedFindings = allFindings.slice(0, 5);
+    }
   }
 
   if (!selectedFindings.length) {
-    throw new Error('No eligible findings found to construct an AI fix prompt.');
+    throw new Error('No findings found in the repository analysis to construct a fix prompt.');
   }
 
   // 4. Stale Analysis Check
@@ -488,3 +508,4 @@ export async function generateAIFixPrompt({
 
   return fixPromptDoc;
 }
+

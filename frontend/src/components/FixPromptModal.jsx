@@ -26,17 +26,20 @@ const MODES = [
 
 export default function FixPromptModal({
   repositoryId,
+  findings = [],
   selectedFindings = [],
   initialMode = 'single_issue',
   existingPrompt = null,
   onClose,
   showToast,
+  onSaved,
   onPromptSaved,
 }) {
+  const initialFindings = (findings && findings.length ? findings : selectedFindings) || [];
   const [targetAgent, setTargetAgent] = useState(existingPrompt?.targetAgent || 'generic');
-  const [mode, setMode] = useState(existingPrompt?.mode || (selectedFindings.length > 1 ? 'related_issues' : initialMode));
+  const [mode, setMode] = useState(existingPrompt?.mode || (initialFindings.length > 1 ? 'related_issues' : initialMode));
   const [customInstructions, setCustomInstructions] = useState('');
-  const [activeFindings, setActiveFindings] = useState(selectedFindings);
+  const [activeFindings, setActiveFindings] = useState(initialFindings);
 
   const [promptData, setPromptData] = useState(existingPrompt || null);
   const [generating, setGenerating] = useState(false);
@@ -44,29 +47,24 @@ export default function FixPromptModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState('');
   const [savingEdits, setSavingEdits] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
 
-  // Initialize on open
-  useEffect(() => {
-    if (existingPrompt) {
-      setPromptData(existingPrompt);
-      setEditedText(existingPrompt.isUserEdited && existingPrompt.userEditedPrompt
-        ? existingPrompt.userEditedPrompt
-        : existingPrompt.generatedPrompt);
-    } else if (activeFindings.length > 0) {
-      handleGenerate();
-    }
-  }, []);
+  const handleGenerate = async (overrideMode, overrideAgent, overrideFindings) => {
+    const currentM = overrideMode || mode;
+    const currentA = overrideAgent || targetAgent;
+    const currentF = overrideFindings !== undefined ? overrideFindings : activeFindings;
 
-  const handleGenerate = async () => {
     setGenerating(true);
+    setGenerateError(null);
     try {
+      const ids = currentF.map((f) => f.id || f._id).filter(Boolean);
       const res = await fetch(`/api/codebases/${repositoryId}/fix-prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mode,
-          targetAgent,
-          findingIds: activeFindings.map((f) => f.id),
+          mode: currentM,
+          targetAgent: currentA,
+          findingIds: ids,
           customInstructions,
         }),
         credentials: 'include',
@@ -75,19 +73,36 @@ export default function FixPromptModal({
       const json = await res.json();
       if (json.success && json.data) {
         setPromptData(json.data);
-        setEditedText(json.data.generatedPrompt);
+        setEditedText(json.data.userEditedPrompt || json.data.generatedPrompt);
         setIsEditing(false);
         showToast('AI Fix Prompt generated');
+        if (onSaved) onSaved(json.data);
         if (onPromptSaved) onPromptSaved(json.data);
       } else {
-        showToast(json.message || 'Prompt generation failed');
+        const msg = json.message || 'Prompt generation failed';
+        setGenerateError(msg);
+        showToast(msg);
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      const msg = `Error: ${err.message}`;
+      setGenerateError(msg);
+      showToast(msg);
     } finally {
       setGenerating(false);
     }
   };
+
+  // Initialize on open
+  useEffect(() => {
+    if (existingPrompt) {
+      setPromptData(existingPrompt);
+      setEditedText(existingPrompt.isUserEdited && existingPrompt.userEditedPrompt
+        ? existingPrompt.userEditedPrompt
+        : existingPrompt.generatedPrompt);
+    } else {
+      handleGenerate(mode, targetAgent, initialFindings);
+    }
+  }, []);
 
   const handleCopy = () => {
     const textToCopy = isEditing ? editedText : (promptData?.userEditedPrompt || promptData?.generatedPrompt || editedText);
@@ -189,7 +204,12 @@ export default function FixPromptModal({
                     key={ag.id}
                     type="button"
                     className={`fix-agent-pill ${targetAgent === ag.id ? 'active' : ''}`}
-                    onClick={() => setTargetAgent(ag.id)}
+                    onClick={() => {
+                      setTargetAgent(ag.id);
+                      if (!isEditing) {
+                        handleGenerate(mode, ag.id, activeFindings);
+                      }
+                    }}
                   >
                     <Icon size={12} />
                     <span>{ag.label}</span>
@@ -204,7 +224,13 @@ export default function FixPromptModal({
             <select
               className="fix-select-input"
               value={mode}
-              onChange={(e) => setMode(e.target.value)}
+              onChange={(e) => {
+                const newMode = e.target.value;
+                setMode(newMode);
+                if (!isEditing) {
+                  handleGenerate(newMode, targetAgent, activeFindings);
+                }
+              }}
             >
               {MODES.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -236,6 +262,35 @@ export default function FixPromptModal({
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Error Alert Banner */}
+        {generateError && (
+          <div style={{
+            margin: '10px 20px 0',
+            padding: '10px 14px',
+            background: 'rgba(244, 63, 94, 0.12)',
+            border: '1px solid rgba(244, 63, 94, 0.35)',
+            borderRadius: 'var(--radius-sm)',
+            color: '#f43f5e',
+            fontSize: 12.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={14} /> {generateError}
+            </span>
+            <button
+              type="button"
+              className="fix-btn-action secondary"
+              style={{ padding: '3px 8px', fontSize: 11 }}
+              onClick={() => handleGenerate(mode, targetAgent, activeFindings)}
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -325,7 +380,16 @@ export default function FixPromptModal({
             <div className="fix-empty-box">
               <FileText size={28} />
               <h4>No prompt generated yet</h4>
-              <p>Select findings and click generate to build an actionable fix prompt.</p>
+              <p>Click below to build an actionable fix prompt for this repository.</p>
+              <button
+                type="button"
+                className="fix-btn-action primary"
+                onClick={() => handleGenerate(mode, targetAgent, activeFindings)}
+                disabled={generating}
+                style={{ marginTop: 14 }}
+              >
+                <Zap size={13} /> Generate Fix Prompt
+              </button>
             </div>
           )}
         </div>
@@ -335,12 +399,12 @@ export default function FixPromptModal({
           <div className="fix-footer-left">
             <button
               type="button"
-              className="fix-btn-action secondary"
-              onClick={handleGenerate}
-              disabled={generating || activeFindings.length === 0}
+              className="fix-btn-action primary"
+              onClick={() => handleGenerate(mode, targetAgent, activeFindings)}
+              disabled={generating}
             >
-              <RefreshCw size={13} className={generating ? 'spin' : ''} />
-              <span>Regenerate Prompt</span>
+              <Zap size={13} className={generating ? 'spin' : ''} />
+              <span>{generating ? 'Generating Prompt...' : promptData ? 'Regenerate Prompt' : 'Generate Fix Prompt'}</span>
             </button>
           </div>
 
@@ -391,3 +455,4 @@ export default function FixPromptModal({
     </div>
   );
 }
+

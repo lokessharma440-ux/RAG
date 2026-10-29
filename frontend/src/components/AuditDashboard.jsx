@@ -1914,12 +1914,12 @@ export default function AuditDashboard({
         <FixPromptModal
           repositoryId={repositoryId}
           findings={fixModalState.findings}
+          selectedFindings={fixModalState.findings}
           initialMode={fixModalState.mode}
           existingPrompt={fixModalState.existingPrompt}
           onClose={() => setFixModalState({ isOpen: false, findings: [], mode: 'single_issue', existingPrompt: null })}
-          onSaved={() => {
-            fetchSavedPrompts();
-          }}
+          onSaved={() => fetchSavedPrompts()}
+          onPromptSaved={() => fetchSavedPrompts()}
           showToast={showToast}
         />
       )}
