@@ -16,6 +16,7 @@ import {
   Code,
 } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
+import AuditDashboard from './AuditDashboard.jsx';
 import './CodebaseDetailView.css';
 
 export default function CodebaseDetailView({
@@ -352,6 +353,14 @@ export default function CodebaseDetailView({
       <div className="dev-detail-tabs">
         <button
           type="button"
+          className={`dev-detail-tab ${activeTab === 'auditor' ? 'active' : ''}`}
+          onClick={() => setActiveTab('auditor')}
+        >
+          <Sparkles size={14} style={{ marginRight: 6 }} className="text-cyan" />
+          AI Codebase Auditor
+        </button>
+        <button
+          type="button"
           className={`dev-detail-tab ${activeTab === 'files' ? 'active' : ''}`}
           onClick={() => setActiveTab('files')}
         >
@@ -394,6 +403,19 @@ export default function CodebaseDetailView({
           Documentation Generator
         </button>
       </div>
+
+      {/* Tab 0: AI Codebase Auditor Dashboard */}
+      {activeTab === 'auditor' && (
+        <AuditDashboard
+          codebase={codebase}
+          onBack={() => setActiveTab('files')}
+          showToast={showToast}
+          onViewFile={(filePath, startLine, endLine) => {
+            setActiveTab('files');
+            loadFileContent(filePath, startLine ? { startLine, endLine: endLine || startLine } : null);
+          }}
+        />
+      )}
 
       {/* Tab 1: Code Explorer & Viewer */}
       {activeTab === 'files' && (

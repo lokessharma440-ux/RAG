@@ -371,7 +371,8 @@ export default function CodebasesView({
                       onSelectCodebase(cb._id);
                     }}
                   >
-                    <span>Explore Codebase</span>
+                    <Sparkles size={13} style={{ marginRight: 6 }} className="text-cyan" />
+                    <span>Audit &amp; Explore</span>
                     <ArrowRight size={13} style={{ marginLeft: 6 }} />
                   </button>
                 </div>
