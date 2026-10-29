@@ -8,6 +8,7 @@ import {
   AlertCircle, Archive
 } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
+import FixPromptModal from './FixPromptModal.jsx';
 import './AuditDashboard.css';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ function EmptyState({ icon: Icon = Info, title, description, action }) {
 
 // ─── Finding Detail Panel ─────────────────────────────────────────────────────
 
-function FindingDetailPanel({ finding, onViewFile, onClose }) {
+function FindingDetailPanel({ finding, onViewFile, onClose, onOpenFixPrompt }) {
   if (!finding) return null;
   return (
     <div className="audit-detail-panel">
@@ -137,6 +138,17 @@ function FindingDetailPanel({ finding, onViewFile, onClose }) {
             ✕
           </button>
         )}
+      </div>
+
+      <div style={{ marginTop: 12, marginBottom: 12 }}>
+        <button
+          type="button"
+          className="audit-analyze-btn primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={() => onOpenFixPrompt && onOpenFixPrompt([finding], 'single_issue')}
+        >
+          <Zap size={13} /> Generate AI Fix Prompt
+        </button>
       </div>
 
       <div className="audit-detail-section">
@@ -184,8 +196,9 @@ function FindingDetailPanel({ finding, onViewFile, onClose }) {
 
 // ─── Findings Tab ────────────────────────────────────────────────────────────
 
-function FindingsTab({ findings = [], onViewFile, showToast }) {
+function FindingsTab({ findings = [], onViewFile, showToast, onOpenFixPrompt }) {
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const [selectedFindingIds, setSelectedFindingIds] = useState(new Set());
   const [filterSeverity, setFilterSeverity] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterVerification, setFilterVerification] = useState('ALL');
@@ -205,8 +218,55 @@ function FindingsTab({ findings = [], onViewFile, showToast }) {
 
   const counts = countBySeverity(findings);
 
+  const toggleSelectFinding = (e, fId) => {
+    e.stopPropagation();
+    setSelectedFindingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fId)) next.delete(fId);
+      else next.add(fId);
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (selectedFindingIds.size === filtered.length && filtered.length > 0) {
+      setSelectedFindingIds(new Set());
+    } else {
+      setSelectedFindingIds(new Set(filtered.map(f => f.id)));
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Floating / Sticky Bulk Action Bar */}
+      {selectedFindingIds.size > 0 && (
+        <div className="audit-bulk-action-bar">
+          <div className="audit-bulk-count">
+            <CheckCircle size={14} className="text-cyan" />
+            <span><strong>{selectedFindingIds.size}</strong> issues selected</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="audit-analyze-btn primary"
+              onClick={() => {
+                const selected = findings.filter(f => selectedFindingIds.has(f.id));
+                onOpenFixPrompt && onOpenFixPrompt(selected, selected.length === 1 ? 'single_issue' : 'related_issues');
+              }}
+            >
+              <Zap size={13} /> Generate Fix Prompt for ({selectedFindingIds.size}) Selected Issues
+            </button>
+            <button
+              type="button"
+              className="audit-editor-btn"
+              onClick={() => setSelectedFindingIds(new Set())}
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Severity summary bars */}
       <div style={{ padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border-dim)', borderRadius: 'var(--radius-md)' }}>
         <div className="audit-severity-bars">
@@ -227,6 +287,14 @@ function FindingsTab({ findings = [], onViewFile, showToast }) {
 
       {/* Filters */}
       <div className="audit-filters-bar">
+        <button
+          type="button"
+          className="audit-editor-btn"
+          onClick={handleSelectAllFiltered}
+          title="Select or deselect all visible findings"
+        >
+          {selectedFindingIds.size === filtered.length && filtered.length > 0 ? 'Deselect All' : 'Select All Filtered'}
+        </button>
         <span className="audit-filter-label">Filter:</span>
         <select className="audit-filter-select" value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
           <option value="ALL">All Severities</option>
@@ -262,11 +330,33 @@ function FindingsTab({ findings = [], onViewFile, showToast }) {
                 className={`audit-finding-item ${severityBadgeClass(f.severity)} ${selectedFinding?.id === f.id ? 'active' : ''}`}
                 onClick={() => setSelectedFinding(selectedFinding?.id === f.id ? null : f)}
               >
+                <div
+                  style={{ display: 'flex', alignItems: 'center', paddingRight: 8 }}
+                  onClick={e => toggleSelectFinding(e, f.id)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFindingIds.has(f.id)}
+                    onChange={() => {}}
+                    style={{ cursor: 'pointer', accentColor: 'var(--cyan-400)', width: 15, height: 15 }}
+                  />
+                </div>
                 <div className="audit-finding-main">
                   <div className="audit-finding-top">
                     <SeverityTag severity={f.severity} />
                     <span className="audit-category-tag">{CATEGORY_META[f.category]?.label || f.category}</span>
                     {f.confidence && <span className="audit-confidence-tag">conf: {f.confidence}</span>}
+                    <button
+                      type="button"
+                      className="audit-quick-fix-btn"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onOpenFixPrompt && onOpenFixPrompt([f], 'single_issue');
+                      }}
+                      title="Generate AI Fix Prompt for this issue"
+                    >
+                      <Zap size={10} /> Fix Prompt
+                    </button>
                   </div>
                   <div className="audit-finding-title">{f.title}</div>
                   {f.filePath && (
@@ -291,6 +381,7 @@ function FindingsTab({ findings = [], onViewFile, showToast }) {
             finding={selectedFinding}
             onViewFile={onViewFile}
             onClose={() => setSelectedFinding(null)}
+            onOpenFixPrompt={onOpenFixPrompt}
           />
         )}
       </div>
@@ -1012,7 +1103,7 @@ function HistoryTab({ repositoryId, currentAnalysisId, onSelectAnalysis }) {
 
 // ─── Overview Section ────────────────────────────────────────────────────────
 
-function OverviewSection({ analysis, codebase }) {
+function OverviewSection({ analysis, codebase, onOpenFixPrompt, onOpenComparison }) {
   if (!analysis || analysis.status !== 'completed') return null;
 
   const findings = analysis.findings || [];
@@ -1062,6 +1153,44 @@ function OverviewSection({ analysis, codebase }) {
           <div className="audit-metric-label">Analysis Date</div>
           <div className="audit-metric-value date">{formatDate(analysis.completedAt)}</div>
           <div className="audit-metric-sub">Status: {analysis.status || 'completed'}</div>
+        </div>
+      </div>
+
+      {/* AI Fix Prompt Quick Actions Banner */}
+      <div className="audit-fix-prompts-banner">
+        <div className="audit-fix-banner-left">
+          <div className="audit-fix-banner-title">
+            <Zap size={16} className="text-cyan" />
+            <span>AI Fix Prompt Generator</span>
+          </div>
+          <div className="audit-fix-banner-desc">
+            Generate grounded, actionable prompts for external AI coding agents (Antigravity, Cursor, Claude Code, Gemini CLI) to fix discovered issues.
+          </div>
+        </div>
+        <div className="audit-fix-banner-actions">
+          {findings.some(f => ['CRITICAL', 'HIGH'].includes(f.severity)) && (
+            <button
+              type="button"
+              className="audit-fix-action-btn high"
+              onClick={() => onOpenFixPrompt && onOpenFixPrompt(findings.filter(f => ['CRITICAL', 'HIGH'].includes(f.severity)), 'security')}
+            >
+              <Zap size={12} /> Fix Critical / High Issues ({findings.filter(f => ['CRITICAL', 'HIGH'].includes(f.severity)).length})
+            </button>
+          )}
+          <button
+            type="button"
+            className="audit-fix-action-btn primary"
+            onClick={() => onOpenFixPrompt && onOpenFixPrompt(findings, 'full_project')}
+          >
+            <Sparkles size={12} /> Full Project Fix Plan
+          </button>
+          <button
+            type="button"
+            className="audit-fix-action-btn secondary"
+            onClick={onOpenComparison}
+          >
+            <RefreshCw size={12} /> Compare After Fixes
+          </button>
         </div>
       </div>
 
@@ -1131,6 +1260,334 @@ function OverviewSection({ analysis, codebase }) {
   );
 }
 
+// ─── Prompts Tab ─────────────────────────────────────────────────────────────
+
+function PromptsTab({
+  repositoryId,
+  prompts = [],
+  loading,
+  onRefresh,
+  onOpenPrompt,
+  onOpenComparison,
+  onNewPrompt,
+  showToast,
+}) {
+  const handleDelete = async (promptId) => {
+    if (!window.confirm('Delete this fix prompt?')) return;
+    try {
+      const res = await fetch(`/api/codebases/${repositoryId}/fix-prompts/${promptId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Fix prompt deleted');
+        onRefresh();
+      } else {
+        showToast(data.message || 'Failed to delete');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+  };
+
+  const handleDownloadPrompt = (promptId, format = 'md') => {
+    window.open(`/api/codebases/${repositoryId}/fix-prompts/${promptId}/download?format=${format}`, '_blank');
+    showToast(`Downloading as ${format.toUpperCase()}`);
+  };
+
+  const handleCopyPrompt = async (prompt) => {
+    try {
+      const res = await fetch(`/api/codebases/${repositoryId}/fix-prompts/${prompt._id}`, { credentials: 'include' });
+      const json = await res.json();
+      if (json.success && json.data) {
+        const text = json.data.isUserEdited && json.data.userEditedPrompt
+          ? json.data.userEditedPrompt
+          : json.data.generatedPrompt;
+        navigator.clipboard.writeText(text);
+        showToast('Prompt copied to clipboard');
+      }
+    } catch {
+      showToast('Copy failed');
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="audit-section-heading">
+        <div className="audit-section-title">
+          <Zap size={15} /> Generated AI Fix Prompts
+          <span className="audit-section-count">{prompts.length}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="audit-editor-btn"
+            onClick={onOpenComparison}
+          >
+            <RefreshCw size={12} /> Compare Analysis After Fixes
+          </button>
+          <button
+            type="button"
+            className="audit-editor-btn primary"
+            onClick={onNewPrompt}
+          >
+            <Zap size={12} /> New Fix Prompt
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingState message="Loading generated fix prompts..." />
+      ) : prompts.length === 0 ? (
+        <EmptyState
+          icon={Zap}
+          title="No Fix Prompts Generated Yet"
+          description="Select any finding from the Findings tab and click 'Generate AI Fix Prompt' to create tailored instructions for Antigravity, Cursor, Claude Code, or Gemini CLI."
+          action={
+            <button type="button" className="audit-analyze-btn primary" onClick={onNewPrompt}>
+              <Zap size={13} /> Generate First Fix Prompt
+            </button>
+          }
+        />
+      ) : (
+        <div className="audit-prompts-grid">
+          {prompts.map((p) => (
+            <div key={p._id} className="audit-prompt-card">
+              <div className="audit-prompt-card-header">
+                <div className="audit-prompt-title">{p.title}</div>
+                <span className={`audit-prompt-status-pill ${p.status?.toLowerCase() || 'generated'}`}>
+                  {p.status?.replace(/_/g, ' ') || 'GENERATED'}
+                </span>
+              </div>
+
+              <div className="audit-prompt-badges">
+                <span className="audit-badge branch">{p.targetAgent || 'generic'}</span>
+                <span className="audit-badge neutral">{p.mode?.replace(/_/g, ' ')}</span>
+                <span className="audit-badge sha">
+                  {p.selectedFindingIds?.length || 0} issue{(p.selectedFindingIds?.length || 0) !== 1 ? 's' : ''}
+                </span>
+                {p.promptTokensEst > 0 && (
+                  <span className="audit-badge stack">~{p.promptTokensEst} tokens</span>
+                )}
+                {p.isStale && (
+                  <span className="audit-badge" style={{ borderColor: 'var(--amber-400)', color: 'var(--amber-400)' }}>
+                    ⚠ Stale Analysis
+                  </span>
+                )}
+                {p.isUserEdited && (
+                  <span className="audit-badge" style={{ borderColor: 'var(--purple-400)', color: 'var(--purple-400)' }}>
+                    ✓ Edited
+                  </span>
+                )}
+              </div>
+
+              <div className="audit-prompt-date">
+                Created {formatDate(p.createdAt)}
+              </div>
+
+              <div className="audit-prompt-card-actions">
+                <button
+                  type="button"
+                  className="audit-prompt-btn view"
+                  onClick={() => onOpenPrompt(p)}
+                >
+                  <Eye size={12} /> View &amp; Edit
+                </button>
+                <button
+                  type="button"
+                  className="audit-prompt-btn"
+                  onClick={() => handleCopyPrompt(p)}
+                  title="Copy full prompt text"
+                >
+                  <Copy size={12} /> Copy
+                </button>
+                <button
+                  type="button"
+                  className="audit-prompt-btn"
+                  onClick={() => handleDownloadPrompt(p._id, 'md')}
+                  title="Download Markdown"
+                >
+                  <Download size={12} /> .MD
+                </button>
+                <button
+                  type="button"
+                  className="audit-prompt-btn"
+                  onClick={() => handleDownloadPrompt(p._id, 'txt')}
+                  title="Download TXT"
+                >
+                  <Download size={12} /> .TXT
+                </button>
+                <button
+                  type="button"
+                  className="audit-prompt-btn delete"
+                  onClick={() => handleDelete(p._id)}
+                  title="Delete prompt"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Post-Fix Comparison Modal ───────────────────────────────────────────────
+
+function ComparisonModal({ repositoryId, onClose, showToast }) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    const fetchComparison = async () => {
+      try {
+        const res = await fetch(`/api/codebases/${repositoryId}/analysis/compare`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+          credentials: 'include',
+        });
+        const json = await res.json();
+        if (json.success && json.data) {
+          setData(json.data);
+        } else {
+          showToast(json.message || 'Comparison unavailable');
+        }
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchComparison();
+  }, [repositoryId]);
+
+  return (
+    <div className="fix-modal-backdrop" onClick={onClose}>
+      <div className="fix-modal-container" style={{ maxHeight: 720 }} onClick={e => e.stopPropagation()}>
+        <div className="fix-modal-header">
+          <div className="fix-modal-title-group">
+            <div className="fix-modal-title">
+              <RefreshCw size={18} className="text-cyan" />
+              <span>Post-Fix Verification &amp; Comparison</span>
+            </div>
+            <span className="fix-modal-subtitle">
+              Verify which issues were resolved by your external coding agent
+            </span>
+          </div>
+          <button type="button" className="fix-modal-close-btn" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="fix-content-area" style={{ padding: '24px 28px' }}>
+          {loading ? (
+            <LoadingState message="Analyzing audit diff..." />
+          ) : !data || !data.comparisonAvailable ? (
+            <EmptyState
+              icon={Clock}
+              title="Only One Analysis Run Exists"
+              description="To compare fixes, run an AI coding agent to modify your code, re-index or re-analyze the repository, and return here to inspect resolved findings."
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {/* Metrics Grid */}
+              <div className="audit-overview-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                <div className="audit-metric-card">
+                  <div className="audit-metric-label">Fix Rate</div>
+                  <div className="audit-metric-value emerald">{data.metrics.fixRatePercentage}%</div>
+                  <div className="audit-metric-sub">Resolved issues</div>
+                </div>
+                <div className="audit-metric-card">
+                  <div className="audit-metric-label">Resolved</div>
+                  <div className="audit-metric-value emerald">{data.metrics.resolvedCount}</div>
+                  <div className="audit-metric-sub">No longer present</div>
+                </div>
+                <div className="audit-metric-card">
+                  <div className="audit-metric-label">Still Present</div>
+                  <div className="audit-metric-value medium">{data.metrics.stillPresentCount}</div>
+                  <div className="audit-metric-sub">Requires further fixes</div>
+                </div>
+                <div className="audit-metric-card">
+                  <div className="audit-metric-label">New Findings</div>
+                  <div className="audit-metric-value low">{data.metrics.newFindingsCount}</div>
+                  <div className="audit-metric-sub">Detected in new run</div>
+                </div>
+              </div>
+
+              {/* Resolved List */}
+              {data.resolvedFindings.length > 0 && (
+                <div>
+                  <h4 style={{ color: 'var(--emerald-400)', fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle size={14} /> Resolved Issues ({data.resolvedFindings.length})
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {data.resolvedFindings.map(f => (
+                      <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(52, 211, 153, 0.08)', border: '1px solid rgba(52, 211, 153, 0.25)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--emerald-400)', fontWeight: 700, fontSize: 12 }}>✓</span>
+                        <span style={{ color: '#fff', fontSize: 12.5, fontWeight: 600 }}>{f.title}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{f.id}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{f.filePath}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Still Present List */}
+              {data.stillPresentFindings.length > 0 && (
+                <div>
+                  <h4 style={{ color: 'var(--amber-400)', fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={14} /> Still Present ({data.stillPresentFindings.length})
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {data.stillPresentFindings.map(f => (
+                      <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.25)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--amber-400)', fontWeight: 700, fontSize: 12 }}>⚠</span>
+                        <span style={{ color: '#fff', fontSize: 12.5, fontWeight: 600 }}>{f.title}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{f.id}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{f.filePath}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* New Findings List */}
+              {data.newFindings.length > 0 && (
+                <div>
+                  <h4 style={{ color: 'var(--cyan-400)', fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Info size={14} /> New Findings in Latest Commit ({data.newFindings.length})
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {data.newFindings.map(f => (
+                      <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(34, 211, 238, 0.08)', border: '1px solid rgba(34, 211, 238, 0.25)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--cyan-400)', fontWeight: 700, fontSize: 12 }}>+</span>
+                        <span style={{ color: '#fff', fontSize: 12.5, fontWeight: 600 }}>{f.title}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{f.id}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{f.filePath}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="fix-modal-footer">
+          <button type="button" className="fix-btn-action secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AuditDashboard({
@@ -1147,6 +1604,15 @@ export default function AuditDashboard({
   const [loadingAnalysis, setLoadingAnalysis] = useState(true);
   const [triggering, setTriggering] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+  const [savedPrompts, setSavedPrompts] = useState([]);
+  const [loadingPrompts, setLoadingPrompts] = useState(false);
+  const [fixModalState, setFixModalState] = useState({
+    isOpen: false,
+    findings: [],
+    mode: 'single_issue',
+    existingPrompt: null,
+  });
+  const [comparisonModalOpen, setComparisonModalOpen] = useState(false);
 
   useEffect(() => {
     if (initialTab) {
@@ -1155,6 +1621,29 @@ export default function AuditDashboard({
   }, [initialTab]);
 
   const repositoryId = codebase?._id;
+
+  // ── Fetch saved fix prompts ──
+  const fetchSavedPrompts = useCallback(async () => {
+    if (!repositoryId) return;
+    setLoadingPrompts(true);
+    try {
+      const res = await fetch(`/api/codebases/${repositoryId}/fix-prompts`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setSavedPrompts(data.data);
+      } else {
+        setSavedPrompts([]);
+      }
+    } catch {
+      setSavedPrompts([]);
+    } finally {
+      setLoadingPrompts(false);
+    }
+  }, [repositoryId]);
+
+  useEffect(() => {
+    fetchSavedPrompts();
+  }, [fetchSavedPrompts]);
 
   // ── Fetch latest analysis ──
   const fetchAnalysis = useCallback(async () => {
@@ -1232,6 +1721,7 @@ export default function AuditDashboard({
     { id: 'overview', label: 'Overview', icon: BarChart2 },
     { id: 'findings', label: 'Findings', icon: AlertTriangle, count: (analysis?.findings || []).length },
     { id: 'recommendations', label: 'Recommendations', icon: Sparkles, count: (analysis?.recommendations || []).length },
+    { id: 'prompts', label: 'Fix Prompts', icon: Zap, count: savedPrompts.length },
     { id: 'documentation', label: 'Documentation', icon: BookOpen },
     { id: 'history', label: 'History', icon: Clock },
   ];
@@ -1332,7 +1822,7 @@ export default function AuditDashboard({
       )}
 
       {/* Dashboard with results */}
-      {!loadingAnalysis && (hasResults || activeTab === 'documentation' || activeTab === 'history') && (
+      {!loadingAnalysis && (hasResults || activeTab === 'documentation' || activeTab === 'history' || activeTab === 'prompts') && (
         <>
           {/* Tabs */}
           <div className="audit-tabs">
@@ -1358,13 +1848,23 @@ export default function AuditDashboard({
           {/* Tab content */}
           {activeTab === 'overview' && (
             hasResults
-              ? <OverviewSection analysis={analysis} codebase={codebase} />
+              ? <OverviewSection
+                  analysis={analysis}
+                  codebase={codebase}
+                  onOpenFixPrompt={(findings, mode) => setFixModalState({ isOpen: true, findings, mode, existingPrompt: null })}
+                  onOpenComparison={() => setComparisonModalOpen(true)}
+                />
               : <EmptyState icon={BarChart2} title="Run an analysis to see results" />
           )}
 
           {activeTab === 'findings' && (
             hasResults
-              ? <FindingsTab findings={analysis?.findings || []} onViewFile={onViewFile} showToast={showToast} />
+              ? <FindingsTab
+                  findings={analysis?.findings || []}
+                  onViewFile={onViewFile}
+                  showToast={showToast}
+                  onOpenFixPrompt={(findings, mode) => setFixModalState({ isOpen: true, findings, mode, existingPrompt: null })}
+                />
               : <EmptyState icon={AlertTriangle} title="Run an analysis to see findings" />
           )}
 
@@ -1372,6 +1872,19 @@ export default function AuditDashboard({
             hasResults
               ? <RecommendationsTab recommendations={analysis?.recommendations || []} />
               : <EmptyState icon={Sparkles} title="Run an analysis to see recommendations" />
+          )}
+
+          {activeTab === 'prompts' && (
+            <PromptsTab
+              repositoryId={repositoryId}
+              prompts={savedPrompts}
+              loading={loadingPrompts}
+              onRefresh={fetchSavedPrompts}
+              onOpenPrompt={(p) => setFixModalState({ isOpen: true, findings: [], mode: p.mode, existingPrompt: p })}
+              onOpenComparison={() => setComparisonModalOpen(true)}
+              onNewPrompt={() => setFixModalState({ isOpen: true, findings: analysis?.findings || [], mode: 'related_issues', existingPrompt: null })}
+              showToast={showToast}
+            />
           )}
 
           {activeTab === 'documentation' && (
@@ -1394,6 +1907,30 @@ export default function AuditDashboard({
             />
           )}
         </>
+      )}
+
+      {/* Fix Prompt Modal */}
+      {fixModalState.isOpen && (
+        <FixPromptModal
+          repositoryId={repositoryId}
+          findings={fixModalState.findings}
+          initialMode={fixModalState.mode}
+          existingPrompt={fixModalState.existingPrompt}
+          onClose={() => setFixModalState({ isOpen: false, findings: [], mode: 'single_issue', existingPrompt: null })}
+          onSaved={() => {
+            fetchSavedPrompts();
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Post-Fix Comparison Modal */}
+      {comparisonModalOpen && (
+        <ComparisonModal
+          repositoryId={repositoryId}
+          onClose={() => setComparisonModalOpen(false)}
+          showToast={showToast}
+        />
       )}
     </div>
   );

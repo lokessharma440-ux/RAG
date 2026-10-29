@@ -20,10 +20,13 @@ import { Codebase } from '../models/Codebase.js';
 import { RepositoryAnalysis } from '../models/RepositoryAnalysis.js';
 import { GeneratedDocument } from '../models/GeneratedDocument.js';
 import { GitHubPublication } from '../models/GitHubPublication.js';
+import { AIFixPrompt } from '../models/AIFixPrompt.js';
 import { runFullCodebaseAudit } from '../services/codebase/codebaseAuditService.js';
 import { buildDocumentationInventory } from '../services/codebase/documentationInventoryService.js';
 import { generateDoc, VALID_DOC_TYPES } from '../services/codebase/enhancedDocumentationService.js';
 import { validateGitHubUrl } from '../services/codebase/githubService.js';
+import { generateAIFixPrompt, AGENT_PROFILES } from '../services/codebase/aiFixPromptService.js';
+import { compareAnalyses } from '../services/codebase/analysisComparisonService.js';
 
 const router = express.Router();
 
@@ -1071,6 +1074,301 @@ router.get('/:repositoryId/github/publications', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to retrieve publication records.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. AI FIX PROMPT GENERATOR & POST-FIX VERIFICATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/codebases/fix-prompts/agents
+ * Returns metadata about supported target coding agents.
+ */
+router.get('/fix-prompts/agents', (req, res) => {
+  return res.json({
+    success: true,
+    data: Object.entries(AGENT_PROFILES).map(([key, val]) => ({
+      id: key,
+      name: val.name,
+      description: val.description,
+    })),
+  });
+});
+
+/**
+ * POST /api/codebases/:repositoryId/fix-prompts
+ * Generates an actionable, grounded AI Fix Prompt for external coding agents.
+ */
+router.post('/:repositoryId/fix-prompts', async (req, res) => {
+  const { mode = 'single_issue', targetAgent = 'generic', findingIds = [], customInstructions = '', options = {} } = req.body;
+
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found or access denied.' });
+    }
+
+    const fixPrompt = await generateAIFixPrompt({
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+      mode,
+      targetAgent,
+      findingIds,
+      customInstructions,
+      options,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'AI Fix Prompt generated successfully.',
+      data: fixPrompt,
+    });
+  } catch (err) {
+    console.error('[AI Fix Prompt Generation Error]:', err);
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Failed to generate AI fix prompt.',
+    });
+  }
+});
+
+/**
+ * POST /api/codebases/:repositoryId/findings/:findingId/fix-prompt
+ * Finding-level direct action: Generates a single-issue fix prompt for a specific finding.
+ */
+router.post('/:repositoryId/findings/:findingId/fix-prompt', async (req, res) => {
+  const { targetAgent = 'generic', customInstructions = '' } = req.body;
+
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found or access denied.' });
+    }
+
+    const fixPrompt = await generateAIFixPrompt({
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+      mode: 'single_issue',
+      targetAgent,
+      findingIds: [req.params.findingId],
+      customInstructions,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Fix prompt generated for finding.',
+      data: fixPrompt,
+    });
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Failed to generate single finding fix prompt.',
+    });
+  }
+});
+
+/**
+ * GET /api/codebases/:repositoryId/fix-prompts
+ * Lists all generated AI Fix Prompts for this repository.
+ */
+router.get('/:repositoryId/fix-prompts', async (req, res) => {
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found.' });
+    }
+
+    const prompts = await AIFixPrompt.find({
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+    })
+      .select('-generatedPrompt -userEditedPrompt')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      count: prompts.length,
+      data: prompts,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve fix prompts.' });
+  }
+});
+
+/**
+ * GET /api/codebases/:repositoryId/fix-prompts/:promptId
+ * Retrieves full details and text of an AI Fix Prompt.
+ */
+router.get('/:repositoryId/fix-prompts/:promptId', async (req, res) => {
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found.' });
+    }
+
+    const prompt = await AIFixPrompt.findOne({
+      _id: req.params.promptId,
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+    });
+
+    if (!prompt) {
+      return res.status(404).json({ success: false, message: 'Fix prompt not found.' });
+    }
+
+    return res.json({
+      success: true,
+      data: prompt,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch fix prompt.' });
+  }
+});
+
+/**
+ * PATCH /api/codebases/:repositoryId/fix-prompts/:promptId
+ * Updates user edits, title, or status of an existing AI Fix Prompt.
+ */
+router.patch('/:repositoryId/fix-prompts/:promptId', async (req, res) => {
+  const { userEditedPrompt, status, title } = req.body;
+
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found.' });
+    }
+
+    const prompt = await AIFixPrompt.findOne({
+      _id: req.params.promptId,
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+    });
+
+    if (!prompt) {
+      return res.status(404).json({ success: false, message: 'Fix prompt not found.' });
+    }
+
+    if (userEditedPrompt !== undefined) {
+      prompt.userEditedPrompt = userEditedPrompt;
+      prompt.isUserEdited = true;
+    }
+    if (status) prompt.status = status;
+    if (title) prompt.title = title;
+
+    await prompt.save();
+
+    return res.json({
+      success: true,
+      message: 'Fix prompt updated successfully.',
+      data: prompt,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update fix prompt.' });
+  }
+});
+
+/**
+ * GET /api/codebases/:repositoryId/fix-prompts/:promptId/download
+ * Downloads prompt text as Markdown (.md) or Plain Text (.txt).
+ */
+router.get('/:repositoryId/fix-prompts/:promptId/download', async (req, res) => {
+  const format = req.query.format === 'txt' ? 'txt' : 'md';
+
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found.' });
+    }
+
+    const prompt = await AIFixPrompt.findOne({
+      _id: req.params.promptId,
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+    });
+
+    if (!prompt) {
+      return res.status(404).json({ success: false, message: 'Fix prompt not found.' });
+    }
+
+    // Mark as downloaded
+    prompt.status = 'DOWNLOADED';
+    await prompt.save();
+
+    const content = prompt.isUserEdited && prompt.userEditedPrompt
+      ? prompt.userEditedPrompt
+      : prompt.generatedPrompt;
+
+    const safeRepoName = (codebase.name || 'repo').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeAgent = (prompt.targetAgent || 'generic').toLowerCase();
+    const filename = `devmind-fix-prompt-${safeRepoName}-${safeAgent}.${format}`;
+
+    const contentType = format === 'txt' ? 'text/plain; charset=utf-8' : 'text/markdown; charset=utf-8';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(content || '');
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to download prompt.' });
+  }
+});
+
+/**
+ * DELETE /api/codebases/:repositoryId/fix-prompts/:promptId
+ * Deletes an AI Fix Prompt.
+ */
+router.delete('/:repositoryId/fix-prompts/:promptId', async (req, res) => {
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found.' });
+    }
+
+    const deleted = await AIFixPrompt.findOneAndDelete({
+      _id: req.params.promptId,
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Fix prompt not found.' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Fix prompt deleted successfully.',
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete fix prompt.' });
+  }
+});
+
+/**
+ * POST /api/codebases/:repositoryId/analysis/compare
+ * Compares two analysis runs (previous vs current) to verify resolved, remaining, and new findings.
+ */
+router.post('/:repositoryId/analysis/compare', async (req, res) => {
+  const { previousAnalysisId = null, currentAnalysisId = null } = req.body;
+
+  try {
+    const codebase = await verifyRepositoryOwnership(req.params.repositoryId, req.user._id);
+    if (!codebase) {
+      return res.status(404).json({ success: false, message: 'Repository not found or access denied.' });
+    }
+
+    const report = await compareAnalyses({
+      repositoryId: codebase._id,
+      ownerUserId: req.user._id,
+      previousAnalysisId,
+      currentAnalysisId,
+    });
+
+    return res.json(report);
+  } catch (err) {
+    console.error('[Analysis Comparison Error]:', err);
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Failed to compare codebase analyses.',
+    });
   }
 });
 
