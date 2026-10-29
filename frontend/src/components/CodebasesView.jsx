@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Code2,
   X,
+  Sparkles,
 } from 'lucide-react';
 import './CodebasesView.css';
 
