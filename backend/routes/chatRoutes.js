@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
     const result = await queryDocumentRAG(
       question,
       Array.isArray(documentIds) ? documentIds : [],
-      typeof topK === 'number' && topK > 0 ? topK : 3,
+      typeof topK === 'number' && topK > 0 ? topK : 5,
       req.user._id
     );
 

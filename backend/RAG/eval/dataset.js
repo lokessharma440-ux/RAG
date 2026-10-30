@@ -52,7 +52,97 @@ SECTION 4: TOKENIZER NORMALIZATION AND KEYWORD OVERLAP RULES
 When computing exact lexical keyword overlap boosts, the query tokenizer executes deterministic sanitization. Punctuation is stripped using the regular expression /[^\w\s]/g. Only words whose character length strictly exceeds 2 characters (i.e. length >= 3) and that are not members of the standard stopword set are evaluated for chunk substring matches.`,
 };
 
-export const EVAL_DOCUMENTS = [EVAL_DOCUMENT, EVAL_DOCUMENT_2];
+export const EVAL_DOCUMENT_NORTHSTAR = {
+  id: 'doc-eval-northstar-report-2026',
+  originalName: 'Northstar_Community_Learning_Hub_Report.txt',
+  fileType: 'txt',
+  text: `NORTHSTAR COMMUNITY LEARNING HUB
+Operations and Impact Report
+Reporting period: 1 April 2025 – 31 March 2026
+Document version: 1.2
+Prepared by: Northstar Programme Office
+
+1. ORGANISATION OVERVIEW
+Northstar Community Learning Hub (NCLH) is a nonprofit organisation that provides after-school learning support, digital-literacy workshops, and career-readiness activities for young people aged 13–21. Its main centre is in Devgarh. During the reporting period, Northstar operated three learning centres: Devgarh Central, Riverbend, and Hillview.
+
+Northstar's mission is to help young people build practical skills through accessible, community-based learning. Its programmes are not formal school qualifications, and completion of a Northstar course does not guarantee admission to a college, a job, or a professional certification.
+
+2. PROGRAMMES
+Northstar ran four core programmes during the reporting period.
+
+A. Digital Foundations
+- Intended participants: ages 13–18.
+- Duration: 8 weeks.
+- Topics: file management, online safety, email, document editing, and introductory spreadsheets.
+- Delivery: two 90-minute sessions per week.
+- A participant is counted as a programme completer after attending at least 12 of the 16 sessions and submitting the final practical task.
+- The programme had 240 enrolments and 186 completers.
+
+B. Code Pathways
+- Intended participants: ages 16–21.
+- Duration: 12 weeks.
+- Topics: HTML, CSS, JavaScript fundamentals, debugging, Git basics, and a small team project.
+- Delivery: three 2-hour sessions per week.
+- Completion requires attendance at 27 of 36 sessions and submission of a working team project.
+- The programme had 150 enrolments and 105 completers.
+- Code Pathways introduces web development; it does not teach advanced machine learning or guarantee a software job.
+
+C. Career Launch
+- Intended participants: ages 18–21.
+- Duration: 6 weeks.
+- Topics: CV preparation, interview practice, workplace communication, and job-search planning.
+- Delivery: one 2-hour workshop and one 1-hour mentoring meeting per week.
+- Completion requires attending at least five workshops and completing a mock interview.
+- The programme had 120 enrolments and 90 completers.
+
+D. Community Mentor Circle
+- Intended participants: ages 13–21.
+- Duration: ongoing, with a quarterly review.
+- Activities: small-group mentoring, goal setting, and referrals to local support services.
+- Mentors are volunteers who receive an induction and safeguarding briefing. They are not presented as licensed counsellors.
+- The programme had 80 active participants at the end of the reporting period. Because participation is ongoing, Northstar does not report a comparable “completion” count for this programme.
+
+3. PARTICIPATION AND OUTCOMES
+Across the three time-limited programmes—Digital Foundations, Code Pathways, and Career Launch—there were 510 enrolments in total and 381 programme completers in total. Enrolments are programme registrations, not unique individuals. A person may enrol in more than one programme, so the total must not be described as 510 distinct people.
+
+The overall completion rate for those three time-limited programmes is calculated as total completers divided by total enrolments. Northstar reports this as 74.7%, rounded to one decimal place.
+
+Centre-level enrolment figures:
+- Devgarh Central: 230 enrolments.
+- Riverbend: 165 enrolments.
+- Hillview: 115 enrolments.
+These centre figures sum to the same 510 programme enrolments. They do not indicate how many unique individuals attended each centre.
+
+A follow-up survey was sent to 120 Career Launch completers three months after the programme ended. Seventy-two people responded. Of those respondents, 39 said they had started paid work, 18 said they were pursuing further education, and 15 said they were still seeking work. These are self-reported responses from the 72 respondents only; Northstar has not verified employment status, and the results should not be generalised to all 120 completers without qualification.
+
+4. BUDGET AND EXPENDITURE
+Northstar's approved operating budget for the reporting year was ₹12,00,000.
+Actual expenditure across all operational categories was ₹11,40,000.
+The approved budget for the devices-and-learning-materials category was ₹3,60,000. The report does not provide a separate approved budget for each of the other categories.
+
+5. ACCESS AND ATTENDANCE
+Northstar offered transport assistance to participants who reported that travel costs were a barrier. During the reporting period, 64 participants received transport assistance at least once. This is a count of recipients, not the number of trips or the total number of transport requests.
+
+All three centres offered at least one evening session per week. Hillview was the only centre that also piloted a Sunday session. The Sunday pilot ran for 10 weeks and was attended by 28 participants at least once. The report does not state how many participants attended every Sunday session.
+
+6. SAFEGUARDING, PRIVACY, AND SECURITY
+Participant records are stored in a restricted-access system. Access is limited to authorised programme staff and the data coordinator.
+The organisation uses multi-factor authentication for administrator accounts on its internal portal. The report does not state that every participant account uses multi-factor authentication.
+
+8. LIMITATIONS AND NEXT STEPS
+The organisation has proposed, but not yet approved, a plan to add a fourth centre in Lakeside. No opening date, confirmed funding amount, or staffing plan is available in this report.
+
+The report does not provide:
+- the number of unique individuals served across all programmes;
+- verified long-term employment outcomes;
+- a breakdown of expenditure by centre;
+- a confirmed date for a Lakeside centre opening;
+- the number of portal users;
+- the number of participants who attended every Sunday pilot session.
+END OF REPORT`,
+};
+
+export const EVAL_DOCUMENTS = [EVAL_DOCUMENT, EVAL_DOCUMENT_2, EVAL_DOCUMENT_NORTHSTAR];
 
 /**
  * 12 Deterministic Evaluation Cases across all 6 required categories.
@@ -310,5 +400,138 @@ export const EVAL_DATASET = [
     expectedAnswer: 'The provided documents do not contain enough information to answer this question. The document explicitly states that automated cross-region failover and real-time replica synchronizations are undocumented and unsupported.',
     expectedPassage: null,
     isAnswerable: false,
+  },
+
+  // =========================================================================
+  // --- Categories A-F: Northstar Retrieval, Reasoning & Limitations (36 Cases) ---
+  // =========================================================================
+
+  // --- Category A: Direct Retrieval ---
+  {
+    id: 'eval-25',
+    category: 'direct_retrieval_northstar',
+    question: 'Identify the three learning centres operated by Northstar during the reporting period.',
+    expectedAnswer: 'Devgarh Central, Riverbend, and Hillview.',
+    expectedPassage: 'Northstar operated three learning centres: Devgarh Central, Riverbend, and Hillview',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+  {
+    id: 'eval-26',
+    category: 'direct_retrieval_northstar',
+    question: 'What is the duration in weeks of Digital Foundations?',
+    expectedAnswer: '8 weeks.',
+    expectedPassage: 'Duration: 8 weeks',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+
+  // --- Category B: Numerical Retrieval ---
+  {
+    id: 'eval-27',
+    category: 'numerical_retrieval_northstar',
+    question: 'Find the enrolments and completers for each of the three time-limited programmes in the Northstar report.',
+    expectedAnswer: 'Digital Foundations had 240 enrolments and 186 completers; Code Pathways had 150 enrolments and 105 completers; Career Launch had 120 enrolments and 90 completers.',
+    expectedPassages: [
+      '240 enrolments and 186 completers',
+      '150 enrolments and 105 completers',
+      '120 enrolments and 90 completers',
+    ],
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+  {
+    id: 'eval-28',
+    category: 'numerical_retrieval_northstar',
+    question: "What was Northstar's approved operating budget for the reporting year, and how much was allocated for devices and learning materials?",
+    expectedAnswer: "Approved operating budget was ₹12,00,000, with ₹3,60,000 allocated for devices and learning materials.",
+    expectedPassage: 'approved operating budget for the reporting year was ₹12,00,000',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+
+  // --- Category C: Multi-Hop Reasoning ---
+  {
+    id: 'eval-29',
+    category: 'multihop_reasoning_northstar',
+    question: "Among the three time-limited programmes, which programme had the highest completion rate? Calculate its completion rate to one decimal place. Then compare it with Northstar's overall completion rate of 74.7% and state the difference in percentage points. Use only the figures provided in the report.",
+    expectedAnswer: 'Digital Foundations had the highest completion rate at 77.5% (186/240). The difference compared to the overall rate of 74.7% is 2.8 percentage points (77.5% - 74.7%).',
+    expectedPassages: [
+      '240 enrolments and 186 completers',
+      '150 enrolments and 105 completers',
+      '120 enrolments and 90 completers',
+      'overall completion rate for those three time-limited programmes is calculated as total completers divided by total enrolments. Northstar reports this as 74.7%',
+    ],
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+  {
+    id: 'eval-30',
+    category: 'multihop_reasoning_northstar',
+    question: 'Calculate the percentage of Career Launch follow-up survey respondents who reported that they had started paid work.',
+    expectedAnswer: '39 out of 72 respondents reported paid work, which is 54.2% (or 39/72).',
+    expectedPassage: 'Seventy-two people responded. Of those respondents, 39 said they had started paid work',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+
+  // --- Category D: Missing Information ---
+  {
+    id: 'eval-31',
+    category: 'missing_info_northstar',
+    question: 'How many unique individuals did Northstar serve across all programmes during the reporting period?',
+    expectedAnswer: 'The report explicitly states that it does not provide the number of unique individuals served across all programmes; 510 enrolments are programme registrations, not distinct individuals.',
+    expectedPassage: null,
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: false,
+  },
+  {
+    id: 'eval-32',
+    category: 'missing_info_northstar',
+    question: 'How many participants attended every Sunday session during the pilot?',
+    expectedAnswer: 'The report does not provide the number of participants who attended every Sunday pilot session; it only notes that 28 participants attended at least once.',
+    expectedPassage: null,
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: false,
+  },
+  {
+    id: 'eval-33',
+    category: 'missing_info_northstar',
+    question: 'What is the confirmed opening date for the Lakeside centre?',
+    expectedAnswer: 'The provided documents do not contain enough information to answer this question. The Lakeside centre is a proposed, unapproved plan with no confirmed opening date.',
+    expectedPassage: null,
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: false,
+  },
+
+  // --- Category E: Distinctions and Limitations ---
+  {
+    id: 'eval-34',
+    category: 'distinctions_northstar',
+    question: 'Why are the 510 total enrolments not equivalent to 510 unique individuals served by Northstar?',
+    expectedAnswer: 'Enrolments are programme registrations, not unique individuals. A single person may enrol in more than one programme.',
+    expectedPassage: 'Enrolments are programme registrations, not unique individuals. A person may enrol in more than one programme',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+  {
+    id: 'eval-35',
+    category: 'distinctions_northstar',
+    question: "Does Northstar's use of administrator multi-factor authentication establish that all participant accounts use MFA?",
+    expectedAnswer: 'No, the report explicitly states that it does not state that every participant account uses multi-factor authentication; MFA is used for administrator accounts on the internal portal.',
+    expectedPassage: 'The report does not state that every participant account uses multi-factor authentication',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
+  },
+
+  // --- Category F: Distractor Resistance ---
+  {
+    id: 'eval-36',
+    category: 'distractor_resistance_northstar',
+    question: 'What was the completion rate of the Career Launch programme, and why should it not be confused with the follow-up survey employment rate?',
+    expectedAnswer: 'Career Launch completion rate was 75.0% (90 completers / 120 enrolments). The follow-up survey was sent to 120 completers with 72 responding (39 in paid work, or 54.2%), which reflects unverified self-reported post-programme survey outcomes, not course completion.',
+    expectedPassage: '120 enrolments and 90 completers',
+    relevantDocName: 'Northstar_Community_Learning_Hub_Report.txt',
+    isAnswerable: true,
   },
 ];

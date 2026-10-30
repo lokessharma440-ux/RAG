@@ -134,3 +134,4 @@ const aiFixPromptSchema = new mongoose.Schema(
 aiFixPromptSchema.index({ ownerUserId: 1, repositoryId: 1, createdAt: -1 });
 
 export const AIFixPrompt = mongoose.model('AIFixPrompt', aiFixPromptSchema);
+

@@ -8,8 +8,8 @@
 export class BaseLLMProvider {
   constructor(config = {}) {
     this.name = config.name || 'base';
-    this.maxChunks = config.maxChunks || 5;
-    this.maxTotalChars = config.maxTotalChars || 6000;
+    this.maxChunks = config.maxChunks || 6;
+    this.maxTotalChars = config.maxTotalChars || 8000;
     this.timeoutMs = config.timeoutMs || 30000;
   }
 

@@ -74,7 +74,9 @@ export class MockLLMProvider extends BaseLLMProvider {
     // Check unsupported entities that trigger explicit refusal in grounded models
     const unsupportedKeywords = [
       'openai', 'gpt-4o', 'redis', 'bullmq', 'german', 'pinecone', 'idioms',
-      'azure', 'kubernetes', 'helm', 'chart', 'outage', 'undocumented'
+      'azure', 'kubernetes', 'helm', 'chart', 'outage', 'undocumented',
+      'every sunday', 'unique individuals', 'confirmed opening date', 'lakeside centre opening',
+      'attended every'
     ];
     const hasUnsupportedKeyword = unsupportedKeywords.some((kw) => lookupKey.includes(kw));
 
