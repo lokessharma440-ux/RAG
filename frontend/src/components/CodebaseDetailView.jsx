@@ -16,6 +16,7 @@ import {
   Code,
 } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
+import AuditDashboard from './AuditDashboard.jsx';
 import './CodebaseDetailView.css';
 
 export default function CodebaseDetailView({
@@ -352,34 +353,42 @@ export default function CodebaseDetailView({
       <div className="dev-detail-tabs">
         <button
           type="button"
+          className={`dev-detail-tab ${activeTab === 'auditor' ? 'active' : ''}`}
+          onClick={() => setActiveTab('auditor')}
+        >
+          <Sparkles size={14} className="text-cyan" />
+          AI Auditor
+        </button>
+        <button
+          type="button"
           className={`dev-detail-tab ${activeTab === 'files' ? 'active' : ''}`}
           onClick={() => setActiveTab('files')}
         >
-          <FileCode size={14} style={{ marginRight: 6 }} />
-          Code Explorer &amp; Viewer
+          <FileCode size={14} />
+          Code Explorer
         </button>
         <button
           type="button"
           className={`dev-detail-tab ${activeTab === 'chat' ? 'active' : ''}`}
           onClick={() => setActiveTab('chat')}
         >
-          <Bot size={14} style={{ marginRight: 6 }} />
-          Codebase Q&amp;A Chat
+          <Bot size={14} />
+          Q&amp;A Chat
         </button>
         <button
           type="button"
           className={`dev-detail-tab ${activeTab === 'deps' ? 'active' : ''}`}
           onClick={() => setActiveTab('deps')}
         >
-          <Layers size={14} style={{ marginRight: 6 }} />
-          Cross-File Dependencies &amp; Impact
+          <Layers size={14} />
+          Dependencies &amp; Impact
         </button>
         <button
           type="button"
           className={`dev-detail-tab ${activeTab === 'security' ? 'active' : ''}`}
           onClick={() => setActiveTab('security')}
         >
-          <Shield size={14} style={{ marginRight: 6 }} />
+          <Shield size={14} />
           Security Audit
           {securityFindings.length > 0 && (
             <span className="dev-tab-counter font-mono">{securityFindings.length}</span>
@@ -390,10 +399,23 @@ export default function CodebaseDetailView({
           className={`dev-detail-tab ${activeTab === 'docs' ? 'active' : ''}`}
           onClick={() => setActiveTab('docs')}
         >
-          <BookOpen size={14} style={{ marginRight: 6 }} />
-          Documentation Generator
+          <BookOpen size={14} />
+          Documentation
         </button>
       </div>
+
+      {/* Tab 0: AI Codebase Auditor Dashboard */}
+      {activeTab === 'auditor' && (
+        <AuditDashboard
+          codebase={codebase}
+          showToast={showToast}
+          initialTab="overview"
+          onViewFile={(filePath, startLine, endLine) => {
+            setActiveTab('files');
+            loadFileContent(filePath, startLine ? { startLine, endLine: endLine || startLine } : null);
+          }}
+        />
+      )}
 
       {/* Tab 1: Code Explorer & Viewer */}
       {activeTab === 'files' && (
@@ -783,63 +805,17 @@ export default function CodebaseDetailView({
         </div>
       )}
 
-      {/* Tab 5: Documentation Generator */}
+      {/* Tab 5: Documentation Generator & Management Studio */}
       {activeTab === 'docs' && (
-        <div className="dev-docs-workspace">
-          <div className="dev-docs-controls-card">
-            <h3 className="dev-panel-title">Automated Codebase Documentation</h3>
-            <p className="dev-panel-desc">
-              Synthesize structured Markdown documentation grounded strictly in this repository's verified
-              source code.
-            </p>
-
-            <div className="dev-doc-type-selector">
-              {[
-                { id: 'architecture', label: 'Architecture Overview' },
-                { id: 'api', label: 'API Endpoint Catalog' },
-                { id: 'models', label: 'Database Models & Schemas' },
-                { id: 'setup', label: 'Setup & Environment Guide' },
-              ].map((dt) => (
-                <button
-                  key={dt.id}
-                  type="button"
-                  className={`dev-doc-type-chip ${docType === dt.id ? 'active' : ''}`}
-                  onClick={() => setDocType(dt.id)}
-                >
-                  {dt.label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="dev-btn-solid"
-              onClick={handleGenerateDoc}
-              disabled={generatingDoc}
-              style={{ marginTop: 14 }}
-            >
-              <Sparkles size={14} style={{ marginRight: 6 }} />
-              {generatingDoc ? 'Synthesizing Documentation...' : `Generate ${docType.toUpperCase()} Documentation`}
-            </button>
-          </div>
-
-          {generatedDoc && (
-            <div className="dev-generated-doc-card">
-              <div className="dev-doc-card-header">
-                <span className="font-mono text-sm font-bold uppercase">
-                  {docType} Documentation
-                </span>
-                <button type="button" className="dev-code-copy-btn" onClick={copyDoc}>
-                  {copiedDoc ? <Check size={13} className="text-emerald" /> : <Copy size={13} />}
-                  <span>{copiedDoc ? 'Copied Markdown' : 'Copy Markdown'}</span>
-                </button>
-              </div>
-              <div className="dev-doc-card-body">
-                <MarkdownContent content={generatedDoc} />
-              </div>
-            </div>
-          )}
-        </div>
+        <AuditDashboard
+          codebase={codebase}
+          showToast={showToast}
+          initialTab="documentation"
+          onViewFile={(filePath, startLine, endLine) => {
+            setActiveTab('files');
+            loadFileContent(filePath, startLine ? { startLine, endLine: endLine || startLine } : null);
+          }}
+        />
       )}
     </div>
   );

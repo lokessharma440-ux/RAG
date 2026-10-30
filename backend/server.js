@@ -13,6 +13,7 @@ import documentRoutes from './routes/documentRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import codebaseRoutes from './routes/codebaseRoutes.js';
+import auditRoutes from './routes/auditRoutes.js';
 import { purgeStaleTempFiles } from './services/documentService.js';
 import { requestCorrelationMiddleware } from './utils/logger.js';
 
@@ -113,6 +114,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/codebases', auditRoutes);
 app.use('/api/codebases', codebaseRoutes);
 
 // Root endpoint
