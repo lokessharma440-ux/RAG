@@ -40,3 +40,4 @@ console.log('Career Launch 75.0% present:', has75);
 console.log('Difference 2.8 percentage points present:', has2_8 && mentionsPercentagePoints);
 
 await mongoose.disconnect();
+

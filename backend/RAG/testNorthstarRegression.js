@@ -272,3 +272,4 @@ runRegressionTests().catch((err) => {
   console.error('\n❌ Regression test execution failed:', err);
   mongoose.disconnect().finally(() => process.exit(1));
 });
+

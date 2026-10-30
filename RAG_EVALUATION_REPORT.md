@@ -164,3 +164,4 @@ This logs:
 1. **Scanned PDF Documents (OCR):** The current pipeline uses `pdf-parse` for digital text streams. Scanned or image-only PDFs currently produce no text and trigger a clear error message. Adding a lightweight local OCR pass (e.g. Tesseract.js) would enable ingestion of scanned receipts and paper forms.
 2. **Dense Multi-Page Tables:** While the enhanced chunker preserves markdown and tab-separated tables within a chunk, tables spanning multiple pages could benefit from explicit table-to-JSON parsing.
 3. **Cross-Document Entity Disambiguation:** When multiple documents discuss entities with identical acronyms, adding a document title prefix to chunk headers (e.g., `[Document: Report 2026 > Section 2]`) provides extra disambiguation context.
+
