@@ -16,10 +16,21 @@ export function validateGitHubUrl(urlString) {
     return { valid: false, error: 'A valid GitHub repository URL string is required.' };
   }
 
-  const cleanUrl = urlString.trim();
+  let cleanUrl = urlString.trim().replace(/\/+$/, '');
 
   if (cleanUrl.includes('..') || cleanUrl.includes('\\')) {
     return { valid: false, error: 'Path traversal sequences or backslashes are not permitted in repository URLs.' };
+  }
+
+  // Auto-normalize GitHub repository formats (e.g. "owner/repo" or "github.com/owner/repo")
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    if (cleanUrl.startsWith('github.com/')) {
+      cleanUrl = `https://${cleanUrl}`;
+    } else if (/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/.test(cleanUrl)) {
+      cleanUrl = `https://github.com/${cleanUrl}`;
+    } else {
+      cleanUrl = `https://${cleanUrl}`;
+    }
   }
 
   try {
@@ -146,21 +157,33 @@ export async function downloadGitHubArchive(owner, repo, branch = 'main', destDi
   const archiveFileName = `github_${owner}_${repo}_${Date.now()}.zip`;
   const destPath = path.join(destDir, archiveFileName);
 
-  // Try standard branch zipball endpoint
+  // Canonical archive endpoints: HEAD.zip automatically resolves to default branch
   const candidateUrls = [
-    `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${branch}`,
-    `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/main`,
+    `https://github.com/${owner}/${repo}/archive/HEAD.zip`,
+    `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${branch || 'main'}`,
+    `https://github.com/${owner}/${repo}/archive/refs/heads/${branch || 'main'}.zip`,
     `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/master`,
-    `https://api.github.com/repos/${owner}/${repo}/zipball/${branch}`,
+    `https://github.com/${owner}/${repo}/archive/refs/heads/master.zip`,
   ];
+
+  const headers = { 'User-Agent': 'DevMind-AI-Codebase-Intelligence/1.0' };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN.trim()}`;
+  }
 
   let downloaded = false;
   let lastStatus = 0;
+  let lastError = null;
 
   for (const url of candidateUrls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30-sec safety timeout
+
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'DevMind-AI-Codebase-Intelligence/1.0' },
+        headers,
+        redirect: 'follow',
+        signal: controller.signal,
       });
 
       if (res.ok) {
@@ -168,16 +191,21 @@ export async function downloadGitHubArchive(owner, repo, branch = 'main', destDi
         const buffer = Buffer.from(arrayBuffer);
         await fs.promises.writeFile(destPath, buffer);
         downloaded = true;
+        clearTimeout(timeout);
         break;
       }
       lastStatus = res.status;
-    } catch {
-      // Try next candidate URL
+    } catch (err) {
+      lastError = err;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   if (!downloaded) {
-    throw new Error(`Failed to download repository archive from GitHub (Status: ${lastStatus || 'network error'}). Verify the repository and branch exist.`);
+    throw new Error(
+      `Failed to download repository archive from GitHub (${lastStatus ? `HTTP ${lastStatus}` : lastError?.message || 'network timeout'}). Verify the repository is public and accessible.`
+    );
   }
 
   const stats = await fs.promises.stat(destPath);

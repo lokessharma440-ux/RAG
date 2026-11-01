@@ -56,7 +56,27 @@ export const IGNORE_DIRECTORIES = new Set([
   'bin',
   'obj',
   '.cache',
+  'docs',
+  'doc',
+  'documentation',
+  'test',
+  'tests',
+  '__tests__',
+  'spec',
+  'specs',
+  'fixtures',
+  'mock',
+  'mocks',
+  'tmp',
+  'temp',
+  '.turbo',
+  '.output',
+  'out',
+  'site',
+  'website',
 ]);
+
+export const MAX_INDEXABLE_FILES = parseInt(process.env.MAX_INDEXABLE_FILES, 10) || 80;
 
 export const IGNORE_FILES = new Set([
   'package-lock.json',
@@ -148,9 +168,11 @@ export async function discoverRepositoryFiles(baseDir, rootPrefix = '', maxIndiv
   const discoveredFiles = [];
 
   async function traverse(currentDir, relativePrefix = '') {
+    if (discoveredFiles.length >= MAX_INDEXABLE_FILES) return;
     const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
 
     for (const entry of entries) {
+      if (discoveredFiles.length >= MAX_INDEXABLE_FILES) break;
       const entryName = entry.name;
       const lowerName = entryName.toLowerCase();
 
