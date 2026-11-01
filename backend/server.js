@@ -68,7 +68,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   })
 );
 
@@ -80,6 +80,7 @@ app.use(requestCorrelationMiddleware);
 
 // 6. Security Rate Limiters
 const authLimiter = rateLimit({
+  skip: (req) => req.method === 'OPTIONS',
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 15, // 15 requests per windowMs
   message: {
@@ -91,6 +92,7 @@ const authLimiter = rateLimit({
 });
 
 const uploadLimiter = rateLimit({
+  skip: (req) => req.method === 'OPTIONS',
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 30, // 30 document uploads per hour
   message: {
@@ -102,6 +104,7 @@ const uploadLimiter = rateLimit({
 });
 
 const chatLimiter = rateLimit({
+  skip: (req) => req.method === 'OPTIONS',
   windowMs: 60 * 1000, // 1 minute
   max: 60, // 60 chat requests per minute
   message: {

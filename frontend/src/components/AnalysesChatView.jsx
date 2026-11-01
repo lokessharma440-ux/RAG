@@ -22,6 +22,7 @@ export default function AnalysesChatView({
   onOpenAuth,
   documents = [],
   uploading = false,
+  uploadProgress = null,
   selectedDocId = 'all',
   onSelectDocumentScope,
   messages,
@@ -336,6 +337,21 @@ export default function AnalysesChatView({
           accept=".pdf,.txt"
           style={{ display: 'none' }}
         />
+
+        {uploadProgress && (
+          <div className={`dev-chat-upload-pill ${uploadProgress.stage}`}>
+            <div className="dev-chat-upload-info font-mono">
+              <span>{uploadProgress.filename}: {uploadProgress.statusText}</span>
+              <span className="font-bold">{uploadProgress.percent}%</span>
+            </div>
+            <div className="dev-chat-upload-bar">
+              <div
+                className={`dev-chat-upload-fill ${uploadProgress.stage}`}
+                style={{ width: `${uploadProgress.percent}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="dev-chat-dock">
           <button
