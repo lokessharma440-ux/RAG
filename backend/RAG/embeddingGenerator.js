@@ -31,4 +31,16 @@ async function generateEmbeddings(chunks) {
     return embeddings;
 }
 
-export { getEmbeddingPipeline, generateEmbeddings };
+async function warmupEmbeddingModel() {
+    try {
+        console.log("[Embedding] Pre-warming Xenova/all-MiniLM-L6-v2 ONNX model...");
+        await getEmbeddingPipeline();
+        console.log("[Embedding] ONNX model initialized and ready.");
+        return true;
+    } catch (err) {
+        console.warn("[Embedding] Model pre-warm deferred or encountered error:", err.message);
+        return false;
+    }
+}
+
+export { getEmbeddingPipeline, generateEmbeddings, warmupEmbeddingModel };

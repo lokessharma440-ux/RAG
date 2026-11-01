@@ -109,6 +109,7 @@ export default function App() {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
+      localStorage.removeItem('auth_token');
       setCurrentUser(null);
       setDocuments([]);
       setMessages([]);

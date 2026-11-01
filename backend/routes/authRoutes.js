@@ -58,6 +58,7 @@ router.post('/register', async (req, res) => {
       message: 'Registration successful.',
       data: {
         user: user.toSafeObject(),
+        token,
       },
     });
   } catch (error) {
@@ -113,6 +114,7 @@ router.post('/login', async (req, res) => {
       message: 'Login successful.',
       data: {
         user: user.toSafeObject(),
+        token,
       },
     });
   } catch (error) {
