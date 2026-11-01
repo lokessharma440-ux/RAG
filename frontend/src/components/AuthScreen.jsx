@@ -56,8 +56,8 @@ export default function AuthScreen({
       if (data.data?.token) {
         localStorage.setItem('auth_token', data.data.token);
       }
-      showToast(mode === 'login' ? 'Signed in successfully' : 'Account registered & signed in');
       if (data.data?.user) {
+        localStorage.setItem('auth_user', JSON.stringify(data.data.user));
         onSuccess(data.data.user);
       }
     } catch (err) {

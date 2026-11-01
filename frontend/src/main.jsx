@@ -21,10 +21,14 @@ window.fetch = async function (input, init = {}) {
     }
   }
 
+  const isApiRequest =
+    (typeof input === 'string' && (input.startsWith('/api') || input.startsWith('api/') || (API_BASE_URL && input.startsWith(API_BASE_URL)))) ||
+    (input instanceof URL && (input.pathname.startsWith('/api') || (API_BASE_URL && input.href.startsWith(API_BASE_URL))));
+
   // Clone headers and inject Authorization Bearer token if present in localStorage
   const headers = new Headers(init.headers || (typeof input === 'object' && input.headers ? input.headers : {}));
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-  if (token && !headers.has('Authorization')) {
+  if (token && isApiRequest && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 

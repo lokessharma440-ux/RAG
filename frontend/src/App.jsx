@@ -17,8 +17,27 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Authentication State (HTTP-Only Cookie + Bearer Sessions)
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAuthInitializing, setIsAuthInitializing] = useState(true);
+  // Immediate synchronous restore from localStorage eliminates cold-start and refresh UI freezing
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const cached = typeof window !== 'undefined' ? localStorage.getItem('auth_user') : null;
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Only show verifying indicator if an auth_token exists but we don't have cached user profile yet
+  const [isAuthInitializing, setIsAuthInitializing] = useState(() => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const cached = typeof window !== 'undefined' ? localStorage.getItem('auth_user') : null;
+      return Boolean(token && !cached);
+    } catch {
+      return false;
+    }
+  });
+
   const [authMode, setAuthMode] = useState('login');
 
   // Documents State (User's Vault)
@@ -38,26 +57,44 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Check Current Session on mount
+  // Check Current Session in background with fast timeout
   const checkCurrentUser = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setIsAuthInitializing(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6-second max check
+
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const res = await fetch('/api/auth/me', {
+        credentials: 'include',
+        signal: controller.signal,
+      });
+
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data?.user) {
           setCurrentUser(data.data.user);
+          localStorage.setItem('auth_user', JSON.stringify(data.data.user));
           return;
         }
       }
+
       if (res.status === 401) {
-        // Expired or invalid token, clean client state
+        // Expired or revoked session, clean client state
         localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        setCurrentUser(null);
       }
-      setCurrentUser(null);
     } catch (err) {
-      console.warn('Session verification error:', err);
-      setCurrentUser(null);
+      if (err.name !== 'AbortError') {
+        console.warn('Session verification notice:', err.message);
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsAuthInitializing(false);
     }
   };
@@ -124,6 +161,7 @@ export default function App() {
       console.error('Logout error:', err);
     } finally {
       localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
       setCurrentUser(null);
       setDocuments([]);
       setMessages([]);
