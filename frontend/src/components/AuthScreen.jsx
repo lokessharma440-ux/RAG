@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DvLogo from './DvLogo.jsx';
 import './AuthScreen.css';
 
@@ -12,7 +12,17 @@ export default function AuthScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
   const [error, setError] = useState(null);
+  const timerRef = useRef(null);
+
+  // Pre-warm the backend container as soon as the auth screen loads
+  useEffect(() => {
+    fetch('/api/health').catch(() => {});
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,11 +37,18 @@ export default function AuthScreen({
     }
 
     setLoading(true);
+    setLoadingSeconds(0);
     setError(null);
+
+    // Track wait time to provide progressive UI feedback for Render cold starts
+    timerRef.current = setInterval(() => {
+      setLoadingSeconds((prev) => prev + 1);
+    }, 1000);
 
     const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second network timeout
+    // 90-second timeout safely accommodates Render free-tier cold starts (which take 35-65s)
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
     try {
       const res = await fetch(endpoint, {
@@ -62,16 +79,38 @@ export default function AuthScreen({
       }
     } catch (err) {
       if (err.name === 'AbortError') {
-        setError('Authentication request timed out. The server may be waking up, please try again.');
+        setError(
+          'Authentication request timed out after 90s. The free-tier server was cold and took longer than expected to spin up. Please try again now that the server is warm.'
+        );
       } else if (err.message === 'Failed to fetch' || (err.message && err.message.includes('NetworkError'))) {
-        setError('Cannot reach server. Please check your network connection or try again later.');
+        setError(
+          'Cannot reach the server. The free-tier backend may still be starting up, or your network is interrupted. Please retry in a moment.'
+        );
       } else {
         setError(err.message || 'An unexpected error occurred.');
       }
     } finally {
       clearTimeout(timeoutId);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       setLoading(false);
+      setLoadingSeconds(0);
     }
+  };
+
+  const getSubmitButtonLabel = () => {
+    if (!loading) {
+      return mode === 'login' ? 'Log in' : 'Create account';
+    }
+    if (loadingSeconds < 4) {
+      return mode === 'login' ? 'Authenticating...' : 'Creating account...';
+    }
+    if (loadingSeconds < 14) {
+      return 'Connecting to server...';
+    }
+    return `Waking server (${loadingSeconds}s)...`;
   };
 
   return (
@@ -151,12 +190,14 @@ export default function AuthScreen({
               className="dev-btn-solid dev-auth-submit-btn"
               disabled={loading}
             >
-              {loading
-                ? 'Authenticating...'
-                : mode === 'login'
-                ? 'Log in'
-                : 'Create account'}
+              {getSubmitButtonLabel()}
             </button>
+
+            {loading && loadingSeconds >= 5 && (
+              <p className="dev-auth-wake-notice">
+                Free-tier cloud servers sleep when idle. Spinning up container ({loadingSeconds}s)... please wait.
+              </p>
+            )}
           </form>
 
           {onCancel && (

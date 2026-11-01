@@ -101,6 +101,8 @@ export default function App() {
 
   useEffect(() => {
     checkCurrentUser();
+    // Non-blocking background health check to pre-warm Render instance for guests
+    fetch('/api/health').catch(() => {});
   }, []);
 
   // Fetch documents for active user
