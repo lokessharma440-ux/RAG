@@ -29,5 +29,10 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
+  },
+  "overrides": {
+    "onnx-proto": {
+      "protobufjs": "^7.6.6"
+    }
   }
 }
