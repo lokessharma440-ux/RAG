@@ -31,55 +31,37 @@ export function uploadDocumentWithProgress(file, onProgress) {
 
     let processingInterval = null;
 
-    // Byte upload progress: 0% to 70%
+    // Byte upload progress: 0% to 90%
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {
-        const rawPercent = Math.round((event.loaded / event.total) * 70);
+        const rawPercent = Math.round((event.loaded / event.total) * 90);
         onProgress({
-          percent: Math.min(rawPercent, 70),
+          percent: Math.min(rawPercent, 90),
           stage: 'uploading',
-          statusText: `Uploading: ${Math.min(rawPercent, 70)}%`,
+          statusText: `Uploading: ${Math.min(rawPercent, 90)}%`,
         });
       }
     };
 
-    // When all bytes are uploaded, advance into server processing stage (70% - 99%)
+    // When all bytes are uploaded, advance into server processing stage (90% - 99%)
     xhr.upload.onload = () => {
-      let currentProgress = 72;
+      let currentProgress = 92;
       onProgress({
         percent: currentProgress,
         stage: 'processing',
-        statusText: 'Uploaded! Extracting text and computing 384-d vectors...',
+        statusText: 'Uploaded! Initializing document processing...',
       });
 
       processingInterval = setInterval(() => {
-        if (currentProgress < 90) {
-          currentProgress += 2;
-          onProgress({
-            percent: currentProgress,
-            stage: 'processing',
-            statusText: `Computing 384-d vector embeddings (${currentProgress}%)...`,
-          });
-        } else if (currentProgress < 98) {
+        if (currentProgress < 98) {
           currentProgress += 1;
-          const statusText =
-            currentProgress < 95
-              ? `Computing 384-d vector embeddings in batches (${currentProgress}%)...`
-              : `Indexing vector chunks in MongoDB vault (${currentProgress}%)...`;
           onProgress({
             percent: currentProgress,
             stage: 'processing',
-            statusText,
-          });
-        } else if (currentProgress === 98) {
-          currentProgress = 99;
-          onProgress({
-            percent: 99,
-            stage: 'processing',
-            statusText: 'Finalizing document index in vault...',
+            statusText: `Finalizing upload (${currentProgress}%)...`,
           });
         }
-      }, 1000);
+      }, 500);
     };
 
     xhr.onload = () => {
@@ -96,7 +78,7 @@ export function uploadDocumentWithProgress(file, onProgress) {
         onProgress({
           percent: 100,
           stage: 'complete',
-          statusText: 'Indexed successfully!',
+          statusText: 'Uploaded! Vectorizing in background...',
         });
         resolve(responseData);
       } else {

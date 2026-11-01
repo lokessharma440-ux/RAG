@@ -66,7 +66,7 @@ router.use(authenticateUser);
  * Import and index a public GitHub repository.
  */
 router.post('/github', async (req, res) => {
-  const { url } = req.body;
+  const { url, branch: userBranch } = req.body;
   const validation = validateGitHubUrl(url);
 
   if (!validation.valid) {
@@ -89,7 +89,7 @@ router.post('/github', async (req, res) => {
       description: metadata.description || `Imported from ${normalizedUrl}`,
       sourceType: 'github',
       sourceUrl: normalizedUrl,
-      defaultBranch: branch || metadata.defaultBranch || 'main',
+      defaultBranch: userBranch || branch || metadata.defaultBranch || 'main',
       indexedCommitSha: metadata.commitSha,
       status: 'fetching',
       progress: {
@@ -116,6 +116,13 @@ router.post('/github', async (req, res) => {
           progress: { stage: 'failed', percentage: 0, message: err.message },
           errorMessage: err.message || 'GitHub import failed.',
         });
+      } finally {
+        if (extractDir) await cleanupDirectory(extractDir);
+        if (archivePath) {
+          try {
+            if (fs.existsSync(archivePath)) await fs.promises.unlink(archivePath);
+          } catch {}
+        }
       }
     };
 

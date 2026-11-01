@@ -142,6 +142,135 @@ async function extractTextFromFile(file, ext) {
 }
 
 /**
+ * Creates the initial Document record in MongoDB with 'processing' status.
+ * Returns immediately so the client HTTP upload finishes in < 1 second.
+ *
+ * @param {Object} file - Multer file object
+ * @param {string|mongoose.Types.ObjectId|null} [userId=null]
+ * @returns {Promise<Object>} Created Document record
+ */
+export async function createInitialDocumentRecord(file, userId = null) {
+  if (!file || (!file.path && !file.buffer)) {
+    throw new Error('No file data provided.');
+  }
+
+  const originalName = file.originalname;
+  const ext = originalName.split('.').pop().toLowerCase();
+
+  if (ext !== 'pdf' && ext !== 'txt') {
+    if (file.path) await cleanupTempFile(file.path);
+    throw new Error(`Invalid file extension ".${ext}". Only .pdf and .txt files are supported.`);
+  }
+
+  const parsedUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
+
+  const docRecord = await Document.create({
+    userId: parsedUserId,
+    originalName,
+    fileType: ext,
+    fileSize: file.size,
+    status: 'processing',
+  });
+
+  return docRecord;
+}
+
+/**
+ * Background worker: Parses document text, chunks it, generates batched
+ * 384-dimensional MiniLM embeddings, and stores chunks in MongoDB.
+ * Always cleans up the temporary disk file upon completion or failure.
+ *
+ * @param {string} docId - MongoDB Document ID
+ * @param {string} filePath - Path to temporary file on disk
+ * @param {string} originalName - Original filename
+ * @param {string|mongoose.Types.ObjectId|null} [userId=null]
+ */
+export async function processDocumentBackground(docId, filePath, originalName, userId = null) {
+  const docRecord = await Document.findById(docId);
+  if (!docRecord) {
+    if (filePath) await cleanupTempFile(filePath);
+    return;
+  }
+
+  const ext = originalName.split('.').pop().toLowerCase();
+  const parsedUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
+
+  try {
+    // 1. Extract text from disk
+    const { text, pageCount } = await extractTextFromFile({ path: filePath }, ext);
+    docRecord.extractedText = text;
+
+    // 2. Divide text into chunks using structure-aware documentProcessor
+    const defaultChunkSize = parseInt(process.env.RAG_CHUNK_SIZE, 10) || 1000;
+    const defaultOverlap = parseInt(process.env.RAG_CHUNK_OVERLAP, 10) || 200;
+    const chunkTexts = splitIntoChunks(text, defaultChunkSize, defaultOverlap);
+    if (!chunkTexts || chunkTexts.length === 0) {
+      throw new Error('Could not divide document into any usable text chunks.');
+    }
+
+    // 3. Generate local embeddings using batched embeddingGenerator
+    const embeddings = await generateEmbeddings(chunkTexts);
+    if (embeddings.length !== chunkTexts.length) {
+      throw new Error('Mismatch between chunk count and generated embeddings count.');
+    }
+
+    // 4. Clean up any preexisting chunks (idempotent write guarantee)
+    await DocumentChunk.deleteMany({ documentId: docRecord._id });
+
+    // 5. Prepare chunk documents for batch insertion with userId ownership
+    const chunkDocs = chunkTexts.map((chunkText, index) => ({
+      userId: parsedUserId,
+      documentId: docRecord._id,
+      chunkIndex: index,
+      text: chunkText,
+      embedding: embeddings[index],
+      originalName,
+      pageNumber: Math.min(pageCount, Math.floor((index / chunkTexts.length) * pageCount) + 1),
+    }));
+
+    // 6. Atomically insert chunks and transition status to 'ready'
+    if (supportsTransactions()) {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await DocumentChunk.insertMany(chunkDocs, { session });
+          docRecord.status = 'ready';
+          docRecord.characterCount = text.length;
+          docRecord.chunkCount = chunkTexts.length;
+          docRecord.pageCount = pageCount;
+          docRecord.errorMessage = null;
+          await docRecord.save({ session });
+        });
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await DocumentChunk.insertMany(chunkDocs);
+      docRecord.status = 'ready';
+      docRecord.characterCount = text.length;
+      docRecord.chunkCount = chunkTexts.length;
+      docRecord.pageCount = pageCount;
+      docRecord.errorMessage = null;
+      await docRecord.save();
+    }
+  } catch (error) {
+    console.error(`[Background Document Processing Failed] ${docId}:`, error);
+    try {
+      await DocumentChunk.deleteMany({ documentId: docRecord._id });
+      docRecord.status = 'failed';
+      docRecord.errorMessage = error.message || 'Failed to process document.';
+      await docRecord.save();
+    } catch (cleanupErr) {
+      console.error('[Document Cleanup Error]', cleanupErr);
+    }
+  } finally {
+    if (filePath) {
+      await cleanupTempFile(filePath);
+    }
+  }
+}
+
+/**
  * Ingests an uploaded document with rigorous lifecycle state management:
  * 1. Creates initial Document record with status: 'queued'.
  * 2. Transitions status to 'processing'.

@@ -127,6 +127,7 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
 
     // Batch embedding generation in chunks of 16 to keep memory smooth
     const BATCH_SIZE = 16;
+    let lastReportedPct = 60;
     for (let i = 0; i < chunksToInsert.length; i += BATCH_SIZE) {
       const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
       const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
@@ -138,8 +139,11 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         delete batch[j].rawTextForEmbedding;
       }
 
-      const pct = Math.min(85, Math.round(60 + (i / chunksToInsert.length) * 25));
-      await updateCodebaseProgress(codebaseId, 'embedding', pct, 'embedding', `Indexed ${Math.min(i + BATCH_SIZE, chunksToInsert.length)} of ${chunksToInsert.length} code chunks...`);
+      const pct = Math.min(85, Math.round(60 + ((i + BATCH_SIZE) / chunksToInsert.length) * 25));
+      if (pct - lastReportedPct >= 5 || i + BATCH_SIZE >= chunksToInsert.length) {
+        lastReportedPct = pct;
+        await updateCodebaseProgress(codebaseId, 'embedding', pct, 'embedding', `Indexed ${Math.min(i + BATCH_SIZE, chunksToInsert.length)} of ${chunksToInsert.length} code chunks...`);
+      }
     }
 
     // 4. INDEXING (85%)

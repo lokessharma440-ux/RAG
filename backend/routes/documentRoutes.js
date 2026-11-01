@@ -6,6 +6,8 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 import {
+  createInitialDocumentRecord,
+  processDocumentBackground,
   processAndSaveDocument,
   getAllDocuments,
   getDocumentById,
@@ -87,13 +89,25 @@ router.post('/upload', (req, res, next) => {
     }
 
     try {
-      const savedDoc = await processAndSaveDocument(req.file, req.user._id);
-      return res.status(201).json({
+      // 1. Immediately create document record with 'processing' status
+      const docRecord = await createInitialDocumentRecord(req.file, req.user._id);
+
+      // 2. Respond immediately with 201 Created so the browser upload completes in <1s
+      res.status(201).json({
         success: true,
-        message: 'Document successfully parsed, embedded, and indexed.',
-        data: savedDoc,
+        message: 'Document uploaded successfully and is being vectorized in the background.',
+        data: docRecord,
+      });
+
+      // 3. Process extraction, chunking, batched embeddings, and chunk persistence in background
+      setImmediate(() => {
+        processDocumentBackground(docRecord._id, req.file.path, req.file.originalname, req.user._id)
+          .catch((bgErr) => console.error('[Background Document Processing Error]', bgErr));
       });
     } catch (processError) {
+      if (req.file?.path) {
+        await cleanupTempFile(req.file.path);
+      }
       return res.status(400).json({
         success: false,
         message: processError.message || 'Failed to process document.',
