@@ -431,3 +431,65 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Upload progress indicator in chat dock */
+.dev-chat-upload-pill {
+  margin-bottom: 8px;
+  padding: 8px 14px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  animation: fadeIn 0.2s ease;
+}
+
+.dev-chat-upload-pill.complete {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.dev-chat-upload-pill.error {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+.dev-chat-upload-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #4b5563;
+  margin-bottom: 6px;
+}
+
+.dev-chat-upload-pill.complete .dev-chat-upload-info {
+  color: #15803d;
+}
+
+.dev-chat-upload-pill.error .dev-chat-upload-info {
+  color: #b91c1c;
+}
+
+.dev-chat-upload-bar {
+  width: 100%;
+  height: 4px;
+  background-color: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.dev-chat-upload-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.dev-chat-upload-fill.complete {
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+}
+
+.dev-chat-upload-fill.error {
+  background: #ef4444;
+}

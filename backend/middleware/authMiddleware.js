@@ -39,6 +39,10 @@ export function signAuthToken(user) {
  * Attaches user document to req.user.
  */
 export async function authenticateUser(req, res, next) {
+  // Pass through CORS preflight requests without requiring auth headers
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
   try {
     const candidateTokens = [];
 

@@ -12,6 +12,7 @@ async function getEmbeddingPipeline() {
 
     return embeddingPipeline;
 }
+
 async function generateEmbeddings(chunks) {
     const model = await getEmbeddingPipeline();
 
@@ -26,6 +27,9 @@ async function generateEmbeddings(chunks) {
         const embedding = result.tolist()[0];
 
         embeddings.push(embedding);
+
+        // Yield to event loop to keep connection alive and allow heartbeat on slow single-core servers
+        await new Promise((resolve) => setImmediate(resolve));
     }
 
     return embeddings;

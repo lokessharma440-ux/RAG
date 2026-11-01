@@ -13,6 +13,7 @@ import './DocumentsView.css';
 export default function DocumentsView({
   documents = [],
   uploading = false,
+  uploadProgress = null,
   onDirectUpload,
   onDeleteDocument,
   onRetryDocument,
@@ -124,10 +125,40 @@ export default function DocumentsView({
             disabled={uploading}
           >
             <Upload size={14} style={{ marginRight: 6 }} />
-            {uploading ? 'Processing & Vectorizing...' : 'Upload document'}
+            {uploading ? (uploadProgress ? `Processing (${uploadProgress.percent}%)...` : 'Processing...') : 'Upload document'}
           </button>
         </div>
       </div>
+
+      {/* Real-time Upload Progress Percentage Card */}
+      {uploadProgress && (
+        <div className={`dev-upload-progress-card ${uploadProgress.stage}`}>
+          <div className="dev-upload-progress-top">
+            <div className="dev-upload-file-meta">
+              <FileText size={16} className="dev-upload-file-icon" />
+              <span className="dev-upload-file-name" title={uploadProgress.filename}>
+                {uploadProgress.filename}
+              </span>
+            </div>
+            <span className="dev-upload-percent-badge font-mono">
+              {uploadProgress.percent}%
+            </span>
+          </div>
+
+          <div className="dev-upload-progress-bar">
+            <div
+              className={`dev-upload-progress-fill ${uploadProgress.stage}`}
+              style={{ width: `${uploadProgress.percent}%` }}
+            />
+          </div>
+
+          <div className="dev-upload-progress-bottom">
+            <span className="dev-upload-status-text font-mono">
+              {uploadProgress.statusText}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Document Grid (3 Columns) */}
       {filteredDocs.length === 0 ? (

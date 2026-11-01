@@ -8,6 +8,7 @@ import CodebasesView from './components/CodebasesView.jsx';
 import CodebaseDetailView from './components/CodebaseDetailView.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import AuthScreen from './components/AuthScreen.jsx';
+import { uploadDocumentWithProgress } from './utils/uploader.js';
 import './App.css';
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState('all');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [retryingId, setRetryingId] = useState(null);
 
   // Chat Conversation State (Session-Scoped)
@@ -196,20 +198,20 @@ export default function App() {
     }
 
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    setUploadProgress({
+      filename: file.name,
+      percent: 0,
+      stage: 'uploading',
+      statusText: 'Connecting and uploading file...',
+    });
 
     try {
-      const res = await fetch('/api/documents/upload', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
+      const data = await uploadDocumentWithProgress(file, (progress) => {
+        setUploadProgress({
+          filename: file.name,
+          ...progress,
+        });
       });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to process document.');
-      }
 
       showToast(`"${file.name}" uploaded and indexed!`);
       await fetchDocuments();
@@ -217,8 +219,15 @@ export default function App() {
       if (data.data?._id) {
         setSelectedDocId(data.data._id);
       }
+
+      setTimeout(() => {
+        setUploadProgress(null);
+      }, 2500);
     } catch (err) {
       showToast(`Upload error: ${err.message}`);
+      setTimeout(() => {
+        setUploadProgress(null);
+      }, 5000);
     } finally {
       setUploading(false);
     }
@@ -375,6 +384,7 @@ export default function App() {
                 <DocumentsView
                   documents={documents}
                   uploading={uploading}
+                  uploadProgress={uploadProgress}
                   onDirectUpload={handleDirectUpload}
                   onDeleteDocument={handleDeleteDocument}
                   onRetryDocument={handleRetryDocument}
@@ -394,6 +404,7 @@ export default function App() {
                   }}
                   documents={documents}
                   uploading={uploading}
+                  uploadProgress={uploadProgress}
                   selectedDocId={selectedDocId}
                   onSelectDocumentScope={(id) => setSelectedDocId(id)}
                   messages={messages}
