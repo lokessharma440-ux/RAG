@@ -5,7 +5,7 @@ import { getApiUrl } from '../config/api.js';
  * 
  * Progress stages:
  * - 0% - 70%: Uploading raw bytes to backend server
- * - 70% - 95%: Processing document, extracting text, computing 384-d MiniLM vector embeddings
+ * - 70% - 98%: Processing document, extracting text, computing 384-d MiniLM vector embeddings
  * - 100%: Completed & indexed in vector vault
  *
  * @param {File} file - Document file to upload (.pdf or .txt)
@@ -26,8 +26,8 @@ export function uploadDocumentWithProgress(file, onProgress) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     }
 
-    // Set 150-second timeout to accommodate cold starts and multi-page ONNX embedding generation
-    xhr.timeout = 150000;
+    // Set 180-second timeout to safely accommodate cold starts and multi-page PDFs
+    xhr.timeout = 180000;
 
     let processingInterval = null;
 
@@ -43,7 +43,7 @@ export function uploadDocumentWithProgress(file, onProgress) {
       }
     };
 
-    // When all bytes are uploaded, advance into server processing stage (70% - 95%)
+    // When all bytes are uploaded, advance into server processing stage (70% - 99%)
     xhr.upload.onload = () => {
       let currentProgress = 72;
       onProgress({
@@ -53,15 +53,33 @@ export function uploadDocumentWithProgress(file, onProgress) {
       });
 
       processingInterval = setInterval(() => {
-        if (currentProgress < 94) {
+        if (currentProgress < 90) {
           currentProgress += 2;
           onProgress({
             percent: currentProgress,
             stage: 'processing',
             statusText: `Computing 384-d vector embeddings (${currentProgress}%)...`,
           });
+        } else if (currentProgress < 98) {
+          currentProgress += 1;
+          const statusText =
+            currentProgress < 95
+              ? `Computing 384-d vector embeddings in batches (${currentProgress}%)...`
+              : `Indexing vector chunks in MongoDB vault (${currentProgress}%)...`;
+          onProgress({
+            percent: currentProgress,
+            stage: 'processing',
+            statusText,
+          });
+        } else if (currentProgress === 98) {
+          currentProgress = 99;
+          onProgress({
+            percent: 99,
+            stage: 'processing',
+            statusText: 'Finalizing document index in vault...',
+          });
         }
-      }, 1200);
+      }, 1000);
     };
 
     xhr.onload = () => {
@@ -103,7 +121,7 @@ export function uploadDocumentWithProgress(file, onProgress) {
 
     xhr.onerror = () => {
       if (processingInterval) clearInterval(processingInterval);
-      const networkError = 'Network connection to backend failed or server is waking up. Please verify connectivity and try again.';
+      const networkError = 'Network connection interrupted or server waking up. Please verify your connection and try again.';
       onProgress({
         percent: 100,
         stage: 'error',
@@ -114,7 +132,7 @@ export function uploadDocumentWithProgress(file, onProgress) {
 
     xhr.ontimeout = () => {
       if (processingInterval) clearInterval(processingInterval);
-      const timeoutError = 'Upload timed out after 150s. The cloud backend took too long to process embeddings. Please retry with a smaller file or try again.';
+      const timeoutError = 'Upload timed out after 180s. Processing took too long on the cloud server. Please retry or try with a smaller file.';
       onProgress({
         percent: 100,
         stage: 'error',
