@@ -378,17 +378,30 @@ function renderInline(str) {
       // [text](url)
       const linkMatch = token.match(/\[([^\]]+)\]\(([^)]+)\)/);
       if (linkMatch) {
-        parts.push(
-          <a
-            key={`a-${match.index}`}
-            href={linkMatch[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="dev-markdown-link"
-          >
-            {linkMatch[1]}
-          </a>
-        );
+        const rawUrl = (linkMatch[2] || '').trim();
+        // Safe URL validation: only allow legitimate http/https or relative anchor links.
+        // Block javascript:, data:, vbscript:, and file: schemes.
+        const isSafeProtocol = /^(?:https?:\/\/|\/|#)/i.test(rawUrl);
+        if (isSafeProtocol) {
+          parts.push(
+            <a
+              key={`a-${match.index}`}
+              href={rawUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="dev-markdown-link"
+            >
+              {linkMatch[1]}
+            </a>
+          );
+        } else {
+          // Render as neutralized plaintext link if untrusted scheme
+          parts.push(
+            <span key={`unsafe-link-${match.index}`} className="dev-neutralized-link" title="Untrusted URL scheme blocked">
+              {linkMatch[1]} ({rawUrl})
+            </span>
+          );
+        }
       } else {
         parts.push(token);
       }

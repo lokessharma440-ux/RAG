@@ -251,7 +251,7 @@ export class GeminiProvider extends BaseLLMProvider {
 
     try {
       const config = {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: options.systemInstruction || SYSTEM_INSTRUCTION,
         temperature: options.temperature ?? 0.1,
         maxOutputTokens: options.maxOutputTokens ?? 600,
         abortSignal: controller.signal,
@@ -286,6 +286,57 @@ export class GeminiProvider extends BaseLLMProvider {
     const temp = options.temperature ?? 0.1;
     const maxTokens = options.maxOutputTokens ?? 600;
     return `${trimmed}::temp=${temp}::maxTok=${maxTokens}::${chunksSig}`;
+  }
+
+  /**
+   * Generates direct text from prompt without document grounding (for structured rewriting).
+   *
+   * @param {string} prompt
+   * @param {Object} [options={}]
+   * @returns {Promise<string>}
+   */
+  async generateDirectText(prompt, options = {}) {
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return '';
+    }
+
+    const ai = this.getClient();
+    const uniqueModels = [...new Set(this.candidateModels)];
+    let lastError = null;
+
+    for (const modelName of uniqueModels) {
+      try {
+        const config = {
+          systemInstruction: options.systemInstruction || undefined,
+          temperature: options.temperature ?? 0.1,
+          maxOutputTokens: options.maxOutputTokens ?? 150,
+          responseMimeType: options.responseMimeType || (options.json ? 'application/json' : undefined),
+        };
+
+        const res = await this.callWithTimeout(ai, modelName, prompt.trim(), {
+          ...options,
+          ...config,
+        });
+
+        const text = res?.text?.trim() || '';
+        if (text) return text;
+      } catch (err) {
+        lastError = err;
+        if (
+          err?.status === 404 ||
+          err?.message?.includes('NOT_FOUND') ||
+          err?.message?.includes('is not supported')
+        ) {
+          continue;
+        }
+        if (!this.isTransientError(err)) {
+          break;
+        }
+      }
+    }
+
+    if (lastError) throw this.sanitizeError(lastError);
+    return '';
   }
 
   /**

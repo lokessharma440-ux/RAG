@@ -66,10 +66,19 @@ export class BaseLLMProvider {
   formatContext(cleanChunks) {
     if (!cleanChunks || cleanChunks.length === 0) return '';
 
+    // Take top candidate chunks up to maxChunks limit, then sort into logical narrative order for the LLM
+    const topCandidates = cleanChunks.slice(0, this.maxChunks);
+    const sortedForNarrative = [...topCandidates].sort((a, b) => {
+      const nameA = a.name || a.originalName || '';
+      const nameB = b.name || b.originalName || '';
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      return (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0);
+    });
+
     let currentLength = 0;
     const selectedChunks = [];
 
-    for (const chunk of cleanChunks.slice(0, this.maxChunks)) {
+    for (const chunk of sortedForNarrative) {
       if (currentLength + chunk.text.length > this.maxTotalChars) {
         const allowed = this.maxTotalChars - currentLength;
         if (allowed > 100) {
@@ -90,6 +99,17 @@ export class BaseLLMProvider {
           `[Document Excerpt ${idx + 1} - Source: ${chunk.name || 'Document'}]\n${chunk.text}`
       )
       .join('\n\n');
+  }
+
+  /**
+   * Generates a direct text completion without document context (e.g. for query rewriting).
+   *
+   * @param {string} prompt
+   * @param {Object} [options={}]
+   * @returns {Promise<string>}
+   */
+  async generateDirectText(prompt, options = {}) {
+    return this.generateAnswer(prompt, [], options);
   }
 
   /**

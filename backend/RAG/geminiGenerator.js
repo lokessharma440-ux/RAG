@@ -32,7 +32,7 @@ function getClient() {
  * @returns {Promise<string>} The generated answer string.
  */
 async function generateAnswer(question, relevantChunks = [], options = {}) {
-  const provider = getGlobalProvider();
+  const provider = options?.provider || getGlobalProvider();
   return provider.generateAnswer(question, relevantChunks, options);
 }
 

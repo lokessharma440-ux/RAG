@@ -1,0 +1,148 @@
+.dev-sidebar {
+  width: 220px;
+  background-color: #fafafa;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+.dev-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  padding: 0 4px;
+}
+
+.dev-sidebar-close {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  display: none;
+}
+
+.dev-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.dev-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  color: #4b5563;
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.dev-nav-icon {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.dev-nav-item:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.dev-nav-item.active {
+  background-color: #eceef1;
+  color: #111827;
+  font-weight: 500;
+}
+
+.dev-nav-item.active .dev-nav-icon {
+  color: #111827;
+}
+
+.dev-sidebar-footer {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.dev-version-card {
+  background-color: #f3f4f6;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.dev-version-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #111827;
+  letter-spacing: -0.2px;
+}
+
+.dev-version-desc {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+  margin: 4px 0 8px;
+}
+
+.dev-diagnostics-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: #4b5563;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.dev-diagnostics-link:hover {
+  color: #111827;
+  text-decoration: underline;
+}
+
+/* Mobile responsive sidebar */
+.dev-sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 45;
+}
+
+@media (max-width: 768px) {
+  .dev-sidebar {
+    position: fixed;
+    top: 0;
+    left: -240px;
+    bottom: 0;
+    width: 230px;
+    transition: left var(--transition-normal);
+  }
+
+  .dev-sidebar.open-mobile {
+    left: 0;
+  }
+
+  .dev-sidebar-close {
+    display: block;
+  }
+
+  .dev-sidebar-backdrop {
+    display: block;
+  }
+}

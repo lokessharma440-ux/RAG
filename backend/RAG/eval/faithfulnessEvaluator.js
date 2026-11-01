@@ -45,6 +45,10 @@ const STOP_WORDS = new Set([
  */
 export function isExplicitRefusal(answer) {
   if (!answer || typeof answer !== 'string') return false;
+  // Direct answers beginning with No. or Yes. answer the question directly rather than refusing
+  if (/^(?:no|yes)[.,\s]/i.test(answer.trim())) {
+    return false;
+  }
   return REFUSAL_PATTERNS.some((pattern) => pattern.test(answer));
 }
 

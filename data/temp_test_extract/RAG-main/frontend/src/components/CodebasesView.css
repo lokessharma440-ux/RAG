@@ -1,0 +1,280 @@
+/* ==========================================================================
+   CodebasesView.css — DevMind AI Repository Dashboard
+   ========================================================================== */
+
+.dev-codebases-page {
+  padding: 24px 32px 60px;
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+
+.dev-codebases-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.dev-codebases-header-left {
+  max-width: 780px;
+}
+
+.dev-codebases-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  background-color: #ffffff;
+  border: 1px dashed #d1d5db;
+  border-radius: 12px;
+  text-align: center;
+  margin-top: 16px;
+}
+
+.dev-codebases-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background-color: #f3f4f6;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.dev-codebases-empty-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.dev-codebases-empty-desc {
+  font-size: 13.5px;
+  color: #6b7280;
+  max-width: 500px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.dev-codebases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.dev-codebase-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.dev-codebase-card:hover {
+  border-color: #111827;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.dev-codebase-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dev-repo-icon {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.dev-meta-sha {
+  font-size: 11px;
+  color: #6b7280;
+  background-color: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+/* In-Flight Indexing Progress */
+.dev-indexing-progress-wrap {
+  margin: 10px 0 12px;
+  padding: 8px 10px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.dev-indexing-progress-bar {
+  width: 100%;
+  height: 5px;
+  background-color: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.dev-indexing-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.dev-indexing-progress-msg {
+  font-size: 11px;
+  color: #4b5563;
+  display: block;
+}
+
+/* Modal Styles */
+.dev-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.dev-import-modal {
+  width: 100%;
+  max-width: 540px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.dev-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #fafafa;
+}
+
+.dev-modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dev-modal-title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.dev-modal-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.dev-modal-close:hover {
+  color: #111827;
+  background-color: #f3f4f6;
+}
+
+.dev-modal-tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.dev-modal-tab {
+  flex: 1;
+  padding: 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.dev-modal-tab.active {
+  color: #111827;
+  border-bottom-color: #111827;
+  background-color: #ffffff;
+}
+
+.dev-modal-form {
+  padding: 20px;
+}
+
+.dev-modal-desc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.dev-modal-field {
+  margin-bottom: 16px;
+}
+
+.dev-modal-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.dev-modal-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #111827;
+  background-color: #ffffff;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.dev-modal-input:focus {
+  border-color: #111827;
+  box-shadow: 0 0 0 1px #111827;
+}
+
+.dev-file-input {
+  width: 100%;
+  font-size: 13px;
+  color: #374151;
+  padding: 8px 0;
+}
+
+.dev-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}

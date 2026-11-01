@@ -39,20 +39,30 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    const conversationHistory = Array.isArray(body.conversationHistory)
+      ? body.conversationHistory
+      : Array.isArray(body.messages)
+      ? body.messages
+      : [];
+
     const result = await queryDocumentRAG(
       question,
       Array.isArray(documentIds) ? documentIds : [],
       typeof topK === 'number' && topK > 0 ? topK : 5,
-      req.user._id
+      req.user._id,
+      { conversationHistory }
     );
 
     return res.json({
       success: true,
       data: {
         question: question.trim(),
+        rewrittenQuery: result.rewrittenQuery || question.trim(),
+        wasRewritten: result.wasRewritten || false,
         answer: result.answer,
         reply: result.answer,
         sources: result.sources,
+        cached: result.cached || false,
       },
     });
   } catch (error) {
