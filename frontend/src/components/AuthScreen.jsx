@@ -30,31 +30,46 @@ export default function AuthScreen({
     setError(null);
 
     const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second network timeout
 
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
         credentials: 'include',
+        signal: controller.signal,
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`Server returned unexpected response (status ${res.status}). Please try again.`);
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Authentication request failed.');
       }
 
-      showToast(mode === 'login' ? 'Signed in successfully' : 'Account registered & signed in');
       if (data.data?.token) {
         localStorage.setItem('auth_token', data.data.token);
       }
+      showToast(mode === 'login' ? 'Signed in successfully' : 'Account registered & signed in');
       if (data.data?.user) {
         onSuccess(data.data.user);
       }
     } catch (err) {
-      setError(err.message);
+      if (err.name === 'AbortError') {
+        setError('Authentication request timed out. The server may be waking up, please try again.');
+      } else if (err.message === 'Failed to fetch' || (err.message && err.message.includes('NetworkError'))) {
+        setError('Cannot reach server. Please check your network connection or try again later.');
+      } else {
+        setError(err.message || 'An unexpected error occurred.');
+      }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };

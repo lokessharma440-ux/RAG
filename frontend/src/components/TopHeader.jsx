@@ -4,6 +4,7 @@ import './TopHeader.css';
 
 export default function TopHeader({
   currentUser,
+  isAuthInitializing = false,
   onOpenAuth,
   onLogout,
   onToggleMobileSidebar,
@@ -36,7 +37,9 @@ export default function TopHeader({
           <Menu size={18} />
         </button>
         <span className="dev-welcome-text">
-          {currentUser ? (
+          {isAuthInitializing ? (
+            <span className="dev-user-greeting">DevMind AI — Codebase &amp; Document Intelligence</span>
+          ) : currentUser ? (
             <>
               Welcome back, <strong className="dev-user-greeting">{displayName}</strong>
             </>
@@ -47,7 +50,12 @@ export default function TopHeader({
       </div>
 
       <div className="dev-header-right">
-        {currentUser ? (
+        {isAuthInitializing ? (
+          <div className="dev-auth-verifying font-mono">
+            <span className="dev-auth-verifying-dot"></span>
+            <span>Verifying...</span>
+          </div>
+        ) : currentUser ? (
           <div className="dev-user-profile-menu">
             <button
               type="button"

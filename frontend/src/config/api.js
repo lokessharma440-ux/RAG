@@ -8,7 +8,7 @@
  *     requests to '/api/...' target Render directly.
  *   - If VITE_API_URL is left empty, requests remain relative and rely on Vercel rewrites proxying.
  */
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 
 export function getApiUrl(endpoint) {
   if (!endpoint) return API_BASE_URL || '/';

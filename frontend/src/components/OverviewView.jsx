@@ -4,6 +4,7 @@ import './OverviewView.css';
 
 export default function OverviewView({
   currentUser,
+  isAuthInitializing = false,
   documents = [],
   messages = [],
   onOpenAuth,
@@ -25,7 +26,19 @@ export default function OverviewView({
       </div>
 
       {/* User Session Banner */}
-      {currentUser ? (
+      {isAuthInitializing ? (
+        <div className="dev-connected-card">
+          <div className="dev-connected-left">
+            <div className="dev-unconnected-icon">
+              <Bot size={20} className="dev-spin-slow" />
+            </div>
+            <div className="dev-connected-meta">
+              <span className="dev-connected-title">Verifying active session...</span>
+              <span className="dev-connected-sub">Restoring your private workspace securely</span>
+            </div>
+          </div>
+        </div>
+      ) : currentUser ? (
         <div className="dev-connected-card">
           <div className="dev-connected-left">
             <div className="dev-connected-avatar font-mono">

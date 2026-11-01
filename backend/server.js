@@ -45,7 +45,7 @@ app.use(cookieParser());
 // 3. Strict CORS configuration with credentials support
 const envClientOrigins = (process.env.CLIENT_URL || '')
   .split(',')
-  .map((o) => o.trim())
+  .map((o) => o.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
 const allowedOrigins = [
@@ -62,14 +62,9 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      // Allow Vercel preview deployments if explicitly permitted or if origins match .vercel.app
-      if (
-        (process.env.ALLOW_VERCEL_PREVIEWS === 'true' || envClientOrigins.some((o) => o.includes('.vercel.app'))) &&
-        origin.endsWith('.vercel.app')
-      ) {
-        return callback(null, true);
-      }
-      return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
+      const corsError = new Error(`CORS policy blocked access from origin: ${origin}`);
+      corsError.status = 403;
+      return callback(corsError);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

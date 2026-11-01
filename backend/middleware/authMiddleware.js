@@ -40,31 +40,40 @@ export function signAuthToken(user) {
  */
 export async function authenticateUser(req, res, next) {
   try {
-    let token = null;
+    const candidateTokens = [];
 
     // 1. Check HTTP-only cookie
     if (req.cookies && req.cookies.token) {
-      token = req.cookies.token;
+      candidateTokens.push(req.cookies.token);
     }
 
-    // 2. Fallback to Authorization header: "Bearer <token>"
-    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      token = req.headers.authorization.split(' ')[1];
+    // 2. Check Authorization header: "Bearer <token>"
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      candidateTokens.push(req.headers.authorization.split(' ')[1]);
     }
 
-    if (!token) {
+    if (candidateTokens.length === 0) {
       return res.status(401).json({
         success: false,
         message: 'Authentication required. Please log in to access this resource.',
       });
     }
 
-    // Verify token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (jwtErr) {
-      if (jwtErr.name === 'TokenExpiredError') {
+    // Verify token candidates
+    let decoded = null;
+    let lastError = null;
+
+    for (const token of candidateTokens) {
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+        break; // Successfully verified
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (!decoded) {
+      if (lastError && lastError.name === 'TokenExpiredError') {
         return res.status(401).json({
           success: false,
           message: 'Session expired. Please log in again.',
