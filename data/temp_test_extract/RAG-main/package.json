@@ -1,0 +1,11 @@
+{
+  "name": "mern-developer-hub",
+  "version": "1.0.0",
+  "description": "Full-Stack MERN Architecture with Express Backend and Vite React Frontend",
+  "scripts": {
+    "backend": "npm --prefix backend start",
+    "backend:dev": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build"
+  }
+}

@@ -6,6 +6,12 @@ import { splitIntoChunks } from '../RAG/documentProcessor.js';
 import { generateEmbeddings } from '../RAG/embeddingGenerator.js';
 import { cosineSimilarity } from '../RAG/vectorStore.js';
 import { generateAnswer } from '../RAG/geminiGenerator.js';
+import { rewriteQuery } from '../RAG/queryRewriter.js';
+import {
+  lookupSemanticCache,
+  storeSemanticCache,
+  invalidateDocumentCache,
+} from './semanticCacheService.js';
 import { Document } from '../models/Document.js';
 import { DocumentChunk } from '../models/DocumentChunk.js';
 import { supportsTransactions } from '../config/db.js';
@@ -337,6 +343,11 @@ export async function retryDocumentProcessing(id, userId = null) {
     doc.errorMessage = null;
     await doc.save();
 
+    // Invalidate any semantic cache entries tied to this retried/re-indexed document
+    if (doc.userId) {
+      await invalidateDocumentCache(doc.userId, doc._id);
+    }
+
     return doc;
   } catch (error) {
     await DocumentChunk.deleteMany({ documentId: doc._id });
@@ -403,6 +414,11 @@ export async function reindexDocument(id, userId = null) {
   doc.characterCount = doc.extractedText.length;
   doc.errorMessage = null;
   await doc.save();
+
+  // Invalidate any semantic cache entries tied to this modified/re-indexed document
+  if (doc.userId) {
+    await invalidateDocumentCache(doc.userId, doc._id);
+  }
 
   return doc;
 }
@@ -501,6 +517,11 @@ export async function deleteDocument(id, userId = null) {
     chunkQuery.userId = new mongoose.Types.ObjectId(userId);
   }
   await DocumentChunk.deleteMany(chunkQuery);
+
+  // Invalidate any semantic cache entries tied to this document
+  if (userId) {
+    await invalidateDocumentCache(userId, doc._id);
+  }
 
   // Delete document record
   await Document.deleteOne(query);
@@ -686,10 +707,23 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
   }
 
   // Stage 2: Multi-Entity Evidence Collection
-  // If the query or top overview chunks reference multiple entities or members of a set,
-  // ensure each referenced entity has dedicated chunk evidence in the candidates.
+  // Only collect multi-entity evidence if the query explicitly mentions multiple entities,
+  // or explicitly asks to compare/list across entities (e.g. "programmes", "each", "all", "which programme").
+  const queryLower = question.toLowerCase();
+  const isMultiEntityQuery =
+    /(?:programmes?|centres?|courses?|categories?|departments?|phases?|modules?|each|every|all|compare|comparison|between|both|which\s+(?:programme|centre|course|one))/i.test(
+      queryLower
+    );
+
+  const queryEntities = extractCandidateEntities(question);
+  let detectedEntities = queryEntities;
+
   const topOverviewText = candidatePool.slice(0, 3).map((c) => c.text).join('\n');
-  const detectedEntities = extractCandidateEntities(question + '\n' + topOverviewText);
+  if (isMultiEntityQuery && queryEntities.length <= 1) {
+    // If the query asks for multi-entity breakdown, supplement with candidate entities from overview
+    const overviewEntities = extractCandidateEntities(topOverviewText);
+    detectedEntities = [...new Set([...queryEntities, ...overviewEntities])];
+  }
 
   const selectedChunks = [];
   const selectedIndices = new Set();
@@ -735,8 +769,8 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
       const mentionsAllOthers = otherEntities.length > 0 && otherEntities.every((e) => c.text.toLowerCase().includes(e.toLowerCase()));
       if (mentionsAllOthers && !isHeading) score -= 0.4; // Summary list penalty
 
-      return { ...c, entityScore: score };
-    }).sort((a, b) => b.entityScore - a.entityScore);
+      return { ...c, score: Math.max(c.score, score), entityScore: score };
+    }).sort((a, b) => b.score - a.score);
 
     if (rankedForEntity.length > 0) {
       const best = rankedForEntity[0];
@@ -748,9 +782,9 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
     }
   }
 
-  // Stage 3: Context Selection & Logical Ordering
+  // Stage 3: Context Selection & Relevance Ordering
   // Fill remaining slots up to targetK with highest scoring candidates
-  const targetK = Math.max(topK, 5);
+  const targetK = Math.max(topK, selectedChunks.length);
   for (const cand of candidatePool) {
     if (selectedChunks.length >= targetK) break;
     const key = `${cand.documentId}_${cand.chunkIndex}`;
@@ -760,11 +794,8 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
     }
   }
 
-  // Preserve document narrative flow by sorting by documentId and chunkIndex
-  selectedChunks.sort((a, b) => {
-    if (a.documentId !== b.documentId) return a.documentId.localeCompare(b.documentId);
-    return (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0);
-  });
+  // Rank sources strictly by descending relevance score so evaluation and top-K slices reflect highest relevance
+  selectedChunks.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
   return {
     sources: selectedChunks,
@@ -783,20 +814,70 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
  * @returns {Promise<{ answer: string, sources: Array<{ documentId: string, originalName: string, chunkIndex: number, text: string, score: number }> }>}
  */
 export async function queryDocumentRAG(question, documentIds = [], topK = 4, userId = null, options = {}) {
-  const retrieval = await retrieveRelevantChunks(question, documentIds, topK, userId);
+  // Phase 2 & 3: Query Rewriting Integration
+  // Reformulate the raw query into a standalone retrieval query while preserving the original for answer synthesis.
+  const conversationHistory = options.conversationHistory || [];
+  const rewriteResult = await rewriteQuery(question, conversationHistory, options);
+  const retrievalQuery = rewriteResult.rewrittenQuery || question;
+
+  // Compute question embedding once for both Semantic Cache lookup and potential chunk retrieval
+  const [queryEmbedding] = await generateEmbeddings([retrievalQuery.trim()]);
+
+  // Semantic Cache Lookup: Check if a semantically equivalent answer exists for this exact user & scope
+  if (userId) {
+    const cacheResult = await lookupSemanticCache({
+      userId,
+      query: retrievalQuery,
+      queryEmbedding,
+      documentIds,
+      options,
+    });
+
+    if (cacheResult.hit) {
+      return {
+        answer: cacheResult.answer,
+        sources: cacheResult.sources,
+        rewrittenQuery: retrievalQuery,
+        wasRewritten: rewriteResult.wasRewritten,
+        cached: true,
+        cacheSimilarity: cacheResult.similarity,
+      };
+    }
+  }
+
+  const retrieval = await retrieveRelevantChunks(retrievalQuery, documentIds, topK, userId);
 
   if (retrieval.emptyScopeMessage) {
     return {
       answer: retrieval.emptyScopeMessage,
       sources: [],
+      rewrittenQuery: retrievalQuery,
+      wasRewritten: rewriteResult.wasRewritten,
+      cached: false,
     };
   }
 
-  // Generate grounded answer using configured LLM Provider
+  // Generate grounded answer using configured LLM Provider with the original question to maintain exact user intent
   const answer = await generateAnswer(question, retrieval.sources, options);
+
+  // Store successful grounded answer in Semantic Cache
+  if (userId && answer) {
+    storeSemanticCache({
+      userId,
+      query: retrievalQuery,
+      queryEmbedding,
+      answer,
+      sources: retrieval.sources,
+      documentIds,
+      options,
+    }).catch(() => {});
+  }
 
   return {
     answer,
     sources: retrieval.sources,
+    rewrittenQuery: retrievalQuery,
+    wasRewritten: rewriteResult.wasRewritten,
+    cached: false,
   };
 }
