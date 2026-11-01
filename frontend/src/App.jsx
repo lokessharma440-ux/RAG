@@ -16,8 +16,9 @@ export default function App() {
   const [selectedCodebaseId, setSelectedCodebaseId] = useState(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Authentication State (HTTP-Only Cookie Sessions)
+  // Authentication State (HTTP-Only Cookie + Bearer Sessions)
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthInitializing, setIsAuthInitializing] = useState(true);
   const [authMode, setAuthMode] = useState('login');
 
   // Documents State (User's Vault)
@@ -41,14 +42,23 @@ export default function App() {
   const checkCurrentUser = async () => {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'include' });
-      const data = await res.json();
-      if (res.ok && data.success && data.data?.user) {
-        setCurrentUser(data.data.user);
-      } else {
-        setCurrentUser(null);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data?.user) {
+          setCurrentUser(data.data.user);
+          return;
+        }
       }
-    } catch {
+      if (res.status === 401) {
+        // Expired or invalid token, clean client state
+        localStorage.removeItem('auth_token');
+      }
       setCurrentUser(null);
+    } catch (err) {
+      console.warn('Session verification error:', err);
+      setCurrentUser(null);
+    } finally {
+      setIsAuthInitializing(false);
     }
   };
 
@@ -58,6 +68,8 @@ export default function App() {
 
   // Fetch documents for active user
   const fetchDocuments = async () => {
+    // Wait until initial session check completes
+    if (isAuthInitializing) return;
     if (!currentUser) {
       setDocuments([]);
       return;
@@ -82,8 +94,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchDocuments();
-  }, [currentUser]);
+    if (!isAuthInitializing) {
+      fetchDocuments();
+    }
+  }, [currentUser, isAuthInitializing]);
 
   // Document Processing Poller: Poll if any document is queued or processing
   useEffect(() => {
@@ -266,6 +280,7 @@ export default function App() {
           {/* Top Header */}
           <TopHeader
             currentUser={currentUser}
+            isAuthInitializing={isAuthInitializing}
             onOpenAuth={(mode = 'login') => {
               setAuthMode(mode);
               setActiveView('auth');
@@ -280,6 +295,7 @@ export default function App() {
               {activeView === 'overview' && (
                 <OverviewView
                   currentUser={currentUser}
+                  isAuthInitializing={isAuthInitializing}
                   documents={documents}
                   messages={messages}
                   onOpenAuth={(mode) => {

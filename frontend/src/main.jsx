@@ -12,6 +12,8 @@ window.fetch = async function (input, init = {}) {
   if (typeof input === 'string') {
     if (input.startsWith('/api') && API_BASE_URL) {
       url = `${API_BASE_URL}${input}`;
+    } else if (input.startsWith('api/') && API_BASE_URL) {
+      url = `${API_BASE_URL}/${input}`;
     }
   } else if (input instanceof URL) {
     if (input.pathname.startsWith('/api') && API_BASE_URL) {
@@ -29,6 +31,7 @@ window.fetch = async function (input, init = {}) {
   const modifiedInit = {
     ...init,
     headers,
+    credentials: init.credentials || 'include',
   };
 
   return originalFetch(url, modifiedInit);
