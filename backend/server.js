@@ -16,6 +16,7 @@ import codebaseRoutes from './routes/codebaseRoutes.js';
 import auditRoutes from './routes/auditRoutes.js';
 import { purgeStaleTempFiles } from './services/documentService.js';
 import { requestCorrelationMiddleware } from './utils/logger.js';
+import { warmupEmbeddingModel } from './RAG/embeddingGenerator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,9 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Trust reverse proxy (Render, Cloudflare, load balancers)
+app.set('trust proxy', 1);
 
 // Connect to MongoDB
 connectDB();
@@ -39,18 +43,30 @@ app.use(helmet());
 app.use(cookieParser());
 
 // 3. Strict CORS configuration with credentials support
+const envClientOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5000',
-  process.env.CLIENT_URL,
-].filter(Boolean);
+  ...envClientOrigins,
+];
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow non-browser requests (e.g. mobile apps, curl, internal tests)
       if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Allow Vercel preview deployments if explicitly permitted or if origins match .vercel.app
+      if (
+        (process.env.ALLOW_VERCEL_PREVIEWS === 'true' || envClientOrigins.some((o) => o.includes('.vercel.app'))) &&
+        origin.endsWith('.vercel.app')
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
@@ -188,8 +204,12 @@ export async function gracefulShutdown(signal = 'SIGTERM') {
 
 // Only start listening if run directly (allows importing in tests)
 if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, () => {
-    console.log(`🚀 MERN Backend Server running on http://localhost:${PORT}`);
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 MERN Backend Server running on http://0.0.0.0:${PORT}`);
+    // Warm up local ONNX embedding model in background (does not block HTTP listening)
+    warmupEmbeddingModel().catch((err) => {
+      console.warn('[Embedding] Background model warmup warning:', err.message);
+    });
   });
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
