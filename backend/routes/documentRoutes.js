@@ -33,6 +33,9 @@ if (!fs.existsSync(tempUploadDir)) {
 // Bounded Disk Storage: Writes upload stream directly to disk instead of heap memory
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    if (!fs.existsSync(tempUploadDir)) {
+      fs.mkdirSync(tempUploadDir, { recursive: true });
+    }
     cb(null, tempUploadDir);
   },
   filename: (req, file, cb) => {

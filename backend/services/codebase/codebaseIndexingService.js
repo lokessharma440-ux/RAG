@@ -187,9 +187,22 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
       errorMessage: err.message || 'Repository indexing failed.',
     });
   } finally {
-    // Guaranteed cleanup of temporary directory and archive
+    // Guaranteed cleanup of temporary directory and archive file without deleting parent temp directory
     if (tempExtractDir) await cleanupDirectory(tempExtractDir);
-    if (tempZipPath) await cleanupDirectory(path.dirname(tempZipPath));
+    if (tempZipPath) {
+      try {
+        if (fs.existsSync(tempZipPath)) {
+          const stat = await fs.promises.stat(tempZipPath);
+          if (stat.isDirectory()) {
+            await cleanupDirectory(tempZipPath);
+          } else {
+            await fs.promises.unlink(tempZipPath);
+          }
+        }
+      } catch (cleanErr) {
+        console.warn(`[Cleanup Warning] Could not remove ${tempZipPath}:`, cleanErr.message);
+      }
+    }
   }
 }
 
