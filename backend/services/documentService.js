@@ -659,47 +659,6 @@ export async function deleteDocument(id, userId = null) {
 }
 
 /**
- * Detects named entities, listed programmes, centres, or categories in query and overview text.
- * E.g. "Digital Foundations", "Code Pathways", "Career Launch", "Devgarh Central", etc.
- *
- * @param {string} text
- * @returns {Array<string>}
- */
-export function extractCandidateEntities(text) {
-  if (!text) return [];
-  const entities = [];
-
-  // 1. Em-dash / hyphen / colon lists: "programmes—Digital Foundations, Code Pathways, and Career Launch"
-  const listMatches = text.match(/(?:programmes|centres|courses|categories|departments|phases|modules|items)[—–\-:\s]+([A-Za-z0-9,\s&]+?)(?:\.|\n|—|–|$)/gi) || [];
-  for (const m of listMatches) {
-    const colonSplit = m.split(/[—–\-:]/);
-    if (colonSplit.length > 1) {
-      const items = colonSplit[1].split(/,| and | or /i);
-      for (const item of items) {
-        const trimmed = item.trim().replace(/^[-*•\s]+/, '');
-        if (trimmed.length >= 3 && /^[A-Z]/.test(trimmed)) {
-          entities.push(trimmed);
-        }
-      }
-    }
-  }
-
-  // 2. Capitalized multi-word proper phrases (e.g. "Digital Foundations", "Code Pathways")
-  const properPhrases = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b/g) || [];
-  const ignorePhrases = new Set([
-    'Northstar Community', 'Community Learning', 'Learning Hub', 'Reporting Period',
-    'Operations Report', 'Document Version', 'All Rights', 'Executive Director'
-  ]);
-  for (const phrase of properPhrases) {
-    if (!ignorePhrases.has(phrase)) {
-      entities.push(phrase);
-    }
-  }
-
-  return [...new Set(entities)];
-}
-
-/**
  * Retrieves relevant chunks using hybrid dense vector search and lexical keyword matching.
  * Scopes search strictly to ready documents owned by the specified user.
  *
@@ -824,110 +783,14 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
     };
   });
 
-  // 6. Sort by descending score
+  // 6. Sort by descending hybrid score (cosine similarity + keyword boost)
   scoredChunks.sort((a, b) => b.score - a.score);
 
-  // Stage 1: Candidate Pool Selection (broad candidate retrieval)
-  const candidatePoolSize = Math.max(topK * 3, 12);
-  let candidatePool = scoredChunks.filter((c) => c.score >= 0.1).slice(0, candidatePoolSize);
-
-  if (candidatePool.length === 0 && scoredChunks.length > 0) {
-    candidatePool = scoredChunks.slice(0, Math.min(topK, scoredChunks.length));
-  }
-
-  // Stage 2: Multi-Entity Evidence Collection
-  // Only collect multi-entity evidence if the query explicitly mentions multiple entities,
-  // or explicitly asks to compare/list across entities (e.g. "programmes", "each", "all", "which programme").
-  const queryLower = question.toLowerCase();
-  const isMultiEntityQuery =
-    /(?:programmes?|centres?|courses?|categories?|departments?|phases?|modules?|each|every|all|compare|comparison|between|both|which\s+(?:programme|centre|course|one))/i.test(
-      queryLower
-    );
-
-  const queryEntities = extractCandidateEntities(question);
-  let detectedEntities = queryEntities;
-
-  const topOverviewText = candidatePool.slice(0, 3).map((c) => c.text).join('\n');
-  if (isMultiEntityQuery && queryEntities.length <= 1) {
-    // If the query asks for multi-entity breakdown, supplement with candidate entities from overview
-    const overviewEntities = extractCandidateEntities(topOverviewText);
-    detectedEntities = [...new Set([...queryEntities, ...overviewEntities])];
-  }
-
-  const selectedChunks = [];
-  const selectedIndices = new Set();
-
-  // Always include the strongest overall candidate match (e.g. overview/summary)
-  if (candidatePool.length > 0) {
-    selectedChunks.push(candidatePool[0]);
-    selectedIndices.add(`${candidatePool[0].documentId}_${candidatePool[0].chunkIndex}`);
-  }
-
-  // Helper to detect if a line looks like an explicit entity heading or bullet definition
-  const isEntityHeading = (text, entity) => {
-    const lines = text.split('\n');
-    const entityLower = entity.toLowerCase();
-    for (const line of lines) {
-      const l = line.trim();
-      if (l.length < 80 && l.toLowerCase().includes(entityLower)) {
-        if (/^([A-Z0-9]\.|\#+|\-|\*)\s+/i.test(l) || l.toLowerCase() === entityLower || l.toLowerCase().startsWith(entityLower + ':')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  for (const entity of detectedEntities) {
-    const entityLower = entity.toLowerCase();
-    const matching = scoredChunks.filter((c) => c.text.toLowerCase().includes(entityLower));
-    if (matching.length === 0) continue;
-
-    const rankedForEntity = matching.map((c) => {
-      let score = c.score;
-      const isHeading = isEntityHeading(c.text, entity);
-      if (isHeading) score += 0.5;
-
-      const hasNumbers = /\b\d+\b/.test(c.text);
-      const hasEnrol = /(?:enrol|enrolment|enrolments)/i.test(c.text);
-      const hasComplete = /(?:complet|completer|completers|completion)/i.test(c.text);
-      if (hasNumbers && hasEnrol && hasComplete) score += 0.8;
-      else if (hasNumbers && (hasEnrol || hasComplete)) score += 0.2;
-
-      const otherEntities = detectedEntities.filter((e) => e.toLowerCase() !== entityLower);
-      const mentionsAllOthers = otherEntities.length > 0 && otherEntities.every((e) => c.text.toLowerCase().includes(e.toLowerCase()));
-      if (mentionsAllOthers && !isHeading) score -= 0.4; // Summary list penalty
-
-      return { ...c, score: Math.max(c.score, score), entityScore: score };
-    }).sort((a, b) => b.score - a.score);
-
-    if (rankedForEntity.length > 0) {
-      const best = rankedForEntity[0];
-      const key = `${best.documentId}_${best.chunkIndex}`;
-      if (!selectedIndices.has(key)) {
-        selectedChunks.push(best);
-        selectedIndices.add(key);
-      }
-    }
-  }
-
-  // Stage 3: Context Selection & Relevance Ordering
-  // Fill remaining slots up to targetK with highest scoring candidates
-  const targetK = Math.max(topK, selectedChunks.length);
-  for (const cand of candidatePool) {
-    if (selectedChunks.length >= targetK) break;
-    const key = `${cand.documentId}_${cand.chunkIndex}`;
-    if (!selectedIndices.has(key)) {
-      selectedChunks.push(cand);
-      selectedIndices.add(key);
-    }
-  }
-
-  // Rank sources strictly by descending relevance score so evaluation and top-K slices reflect highest relevance
-  selectedChunks.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  // Select top K most relevant chunks
+  const topSources = scoredChunks.slice(0, topK);
 
   return {
-    sources: selectedChunks,
+    sources: topSources,
   };
 }
 

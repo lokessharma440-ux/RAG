@@ -120,7 +120,6 @@ export default function AnalysesChatView({
         text: data?.data?.answer || data?.data?.reply || data?.answer || data?.reply || '',
         sources: data?.data?.sources || data?.sources || [],
         confidence: data?.data?.confidence ?? data?.confidence,
-        faithfulness: data?.data?.faithfulness ?? data?.faithfulness,
         provider: data?.data?.provider ?? data?.provider,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };

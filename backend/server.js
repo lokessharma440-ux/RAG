@@ -8,13 +8,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB, closeDB } from './config/db.js';
 import healthRoutes from './routes/healthRoutes.js';
-import projectRoutes from './routes/projectRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import codebaseRoutes from './routes/codebaseRoutes.js';
 import auditRoutes from './routes/auditRoutes.js';
-import maintenanceRoutes from './routes/maintenanceRoutes.js';
 import { purgeStaleTempFiles } from './services/documentService.js';
 import { requestCorrelationMiddleware } from './utils/logger.js';
 import { warmupEmbeddingModel } from './RAG/embeddingGenerator.js';
@@ -126,12 +124,10 @@ app.use('/api/chat', chatLimiter);
 // 7. Mount Application Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/health', healthRoutes);
-app.use('/api/projects', projectRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/codebases', auditRoutes);
 app.use('/api/codebases', codebaseRoutes);
-app.use('/api/maintenance', maintenanceRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
