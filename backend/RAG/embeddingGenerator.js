@@ -33,7 +33,9 @@ async function generateEmbeddings(chunks) {
         const batch = chunks.slice(i, i + BATCH_SIZE);
         const result = await model(batch, {
             pooling: "mean",
-            normalize: true
+            normalize: true,
+            truncate: true,
+            max_length: 512,
         });
 
         const batchEmbeddings = result.tolist();

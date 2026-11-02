@@ -139,11 +139,15 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         delete batch[j].rawTextForEmbedding;
       }
 
-      const pct = Math.min(85, Math.round(60 + ((i + BATCH_SIZE) / chunksToInsert.length) * 25));
-      if (pct - lastReportedPct >= 5 || i + BATCH_SIZE >= chunksToInsert.length) {
-        lastReportedPct = pct;
-        await updateCodebaseProgress(codebaseId, 'embedding', pct, 'embedding', `Indexed ${Math.min(i + BATCH_SIZE, chunksToInsert.length)} of ${chunksToInsert.length} code chunks...`);
-      }
+      const processedCount = Math.min(i + BATCH_SIZE, chunksToInsert.length);
+      const pct = Math.min(85, Math.round(60 + (processedCount / chunksToInsert.length) * 25));
+      await updateCodebaseProgress(
+        codebaseId,
+        'embedding',
+        pct,
+        'embedding',
+        `Computing embeddings: ${processedCount} of ${chunksToInsert.length} code chunks (${pct}%)...`
+      );
     }
 
     // 4. INDEXING (85%)

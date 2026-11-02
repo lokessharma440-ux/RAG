@@ -223,6 +223,23 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const codebases = await Codebase.find({ ownerUserId: req.user._id }).sort({ createdAt: -1 });
+
+    // Auto-detect jobs interrupted by server restart (in-flight state with > 3 min inactivity)
+    const now = Date.now();
+    for (const cb of codebases) {
+      if (
+        ['queued', 'fetching', 'extracting', 'discovering_files', 'parsing', 'chunking', 'embedding', 'indexing'].includes(cb.status)
+      ) {
+        const lastUpdated = cb.updatedAt ? new Date(cb.updatedAt).getTime() : 0;
+        if (now - lastUpdated > 3 * 60 * 1000) {
+          cb.status = 'failed';
+          cb.errorMessage = 'Indexing process was interrupted by server redeployment. Please delete and re-import.';
+          cb.progress = { stage: 'failed', percentage: 0, message: cb.errorMessage };
+          await cb.save();
+        }
+      }
+    }
+
     return res.json({
       success: true,
       count: codebases.length,
