@@ -21,6 +21,7 @@ export default function CodebasesView({
   showToast,
 }) {
   const [localCodebases, setLocalCodebases] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importTab, setImportTab] = useState('github'); // 'github' | 'zip'
@@ -48,6 +49,8 @@ export default function CodebasesView({
       }
     } catch (err) {
       console.error('Failed to load codebases:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -56,6 +59,7 @@ export default function CodebasesView({
       fetchCodebases();
     } else {
       setLocalCodebases([]);
+      setLoading(false);
     }
   }, [currentUser]);
 
@@ -121,6 +125,8 @@ export default function CodebasesView({
       showToast(`Import initiated for "${data.data.name}"`);
       setIsImportModalOpen(false);
       setGithubUrl('');
+      // Optimistically add to list so progress card displays immediately
+      setLocalCodebases((prev) => [data.data, ...prev.filter((c) => c._id !== data.data._id)]);
       triggerRefresh();
     } catch (err) {
       showToast(`Import failed: ${err.message}`);
@@ -162,6 +168,8 @@ export default function CodebasesView({
       setIsImportModalOpen(false);
       setSelectedFile(null);
       setZipRepoName('');
+      // Optimistically add to list so progress card displays immediately
+      setLocalCodebases((prev) => [data.data, ...prev.filter((c) => c._id !== data.data._id)]);
       triggerRefresh();
     } catch (err) {
       showToast(`Upload failed: ${err.message}`);
@@ -242,7 +250,13 @@ export default function CodebasesView({
       </div>
 
       {/* Codebases Grid */}
-      {filteredCodebases.length === 0 ? (
+      {loading ? (
+        <div className="dev-codebases-empty">
+          <div className="dev-codebases-loading-spinner" />
+          <h3 className="dev-codebases-empty-title">Loading Repositories...</h3>
+          <p className="dev-codebases-empty-desc">Fetching indexed codebase metadata from server.</p>
+        </div>
+      ) : filteredCodebases.length === 0 ? (
         <div className="dev-codebases-empty">
           <div className="dev-codebases-empty-icon">
             <Code2 size={28} />
@@ -431,9 +445,9 @@ export default function CodebasesView({
                 <div className="dev-modal-field">
                   <label className="dev-modal-label">GitHub Repository URL *</label>
                   <input
-                    type="url"
+                    type="text"
                     className="dev-modal-input"
-                    placeholder="https://github.com/facebook/react"
+                    placeholder="https://github.com/facebook/react or owner/repo"
                     value={githubUrl}
                     onChange={(e) => setGithubUrl(e.target.value)}
                     required

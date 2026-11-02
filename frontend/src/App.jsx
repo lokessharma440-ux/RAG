@@ -175,6 +175,37 @@ export default function App() {
     }
   };
 
+  // Reset All Database Data (Complete Wipe)
+  const handleResetDatabase = async () => {
+    if (!window.confirm('CRITICAL ACTION: This will permanently delete ALL users, documents, codebases, and vector embeddings from the database. Do you want to proceed?')) {
+      return;
+    }
+
+    try {
+      showToast('Wiping all database data...');
+      const res = await fetch('/api/maintenance/reset-database', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Database wiped successfully! Please create a new account.');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        setCurrentUser(null);
+        setDocuments([]);
+        setMessages([]);
+        setSelectedCodebaseId(null);
+        setAuthMode('register');
+        setActiveView('auth');
+      } else {
+        alert(data.message || 'Failed to wipe database.');
+      }
+    } catch (err) {
+      alert(`Database reset error: ${err.message}`);
+    }
+  };
+
   // Direct 1-Click Upload (From paperclip, drag-drop, or button)
   const handleDirectUpload = async (file) => {
     if (!file) return;
@@ -335,6 +366,7 @@ export default function App() {
               setActiveView('auth');
             }}
             onLogout={handleLogout}
+            onResetDatabase={handleResetDatabase}
             onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
           />
 

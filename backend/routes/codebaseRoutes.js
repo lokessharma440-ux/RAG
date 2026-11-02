@@ -36,7 +36,12 @@ if (!fs.existsSync(tempUploadDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, tempUploadDir),
+  destination: (req, file, cb) => {
+    if (!fs.existsSync(tempUploadDir)) {
+      fs.mkdirSync(tempUploadDir, { recursive: true });
+    }
+    cb(null, tempUploadDir);
+  },
   filename: (req, file, cb) => {
     const uniqueSuffix = `${Date.now()}_${Math.round(Math.random() * 1e9)}`;
     cb(null, `upload_${uniqueSuffix}.zip`);
@@ -186,6 +191,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
           progress: { stage: 'failed', percentage: 0, message: err.message },
           errorMessage: err.message || 'ZIP extraction and indexing failed.',
         });
+      } finally {
+        if (extractDir) await cleanupDirectory(extractDir);
+        if (zipPath) {
+          try {
+            if (fs.existsSync(zipPath)) await fs.promises.unlink(zipPath);
+          } catch {}
+        }
       }
     };
 

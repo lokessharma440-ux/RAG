@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, LogIn, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, LogIn, LogOut, ChevronDown, Trash2 } from 'lucide-react';
 import './TopHeader.css';
 
 export default function TopHeader({
@@ -7,6 +7,7 @@ export default function TopHeader({
   isAuthInitializing = false,
   onOpenAuth,
   onLogout,
+  onResetDatabase,
   onToggleMobileSidebar,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,6 +86,20 @@ export default function TopHeader({
                   <LogOut size={14} />
                   <span>Log out</span>
                 </button>
+                {onResetDatabase && (
+                  <button
+                    type="button"
+                    className="dev-dropdown-item danger"
+                    style={{ color: '#dc2626' }}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onResetDatabase();
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    <span>Wipe All Database Data</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
