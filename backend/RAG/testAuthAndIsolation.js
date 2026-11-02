@@ -297,6 +297,14 @@ async function runTestSuite() {
       }
       docBId = dataB.data._id;
 
+      // Wait for asynchronous background processing to complete
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const d1 = await Document.findById(docAId);
+        const d2 = await Document.findById(docBId);
+        if (d1?.status === 'ready' && d2?.status === 'ready') break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
       // Check DB directly to verify userId is set on both documents and chunks
       const userARecord = await User.findOne({ email: userAEmail });
       const userBRecord = await User.findOne({ email: userBEmail });
