@@ -328,7 +328,7 @@ export default function CodebasesView({
                       />
                     </div>
                     <span className="dev-indexing-progress-msg font-mono">
-                      {cb.progress?.message || 'Indexing in progress...'} ({cb.progress?.percentage || 0}%)
+                      {cb.progress?.message ? (cb.progress.message.includes('%') ? cb.progress.message : `${cb.progress.message} (${cb.progress.percentage || 0}%)`) : `Indexing in progress... (${cb.progress?.percentage || 0}%)`}
                     </span>
                   </div>
                 )}
