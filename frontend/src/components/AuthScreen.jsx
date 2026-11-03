@@ -63,6 +63,12 @@ export default function AuthScreen({
       try {
         data = await res.json();
       } catch {
+        if (res.status === 503) {
+          throw new Error('Backend service is suspended on Render (HTTP 503). Please log into Render dashboard and click "Resume Service" on devmind-ai-backend.');
+        }
+        if (res.status === 502 || res.status === 504) {
+          throw new Error(`Server gateway error (HTTP ${res.status}). The cloud instance took too long to spin up. Please retry in a few seconds.`);
+        }
         throw new Error(`Server returned unexpected response (status ${res.status}). Please try again.`);
       }
 
