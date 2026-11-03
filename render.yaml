@@ -14,6 +14,12 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: NODE_OPTIONS
+        value: "--expose-gc --max-old-space-size=256"
+      - key: EMBEDDING_BATCH_SIZE
+        value: "2"
+      - key: CODEBASE_EMBEDDING_BATCH_SIZE
+        value: "4"
       - key: MONGO_URI
         sync: false
       - key: GEMINI_API_KEY
@@ -26,4 +32,3 @@ services:
         value: "true"
       - key: LLM_PROVIDER
         value: gemini
-

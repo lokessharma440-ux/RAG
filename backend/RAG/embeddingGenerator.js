@@ -38,13 +38,13 @@ async function getEmbeddingPipeline() {
   return initializationPromise;
 }
 
-// Bounded batch size: 8 is conservative and safe for 512MB RAM on Render Free
-const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 8;
+// Bounded batch size: 2 is safe and prevents native tensor memory explosion on Render Free (512MB RAM)
+const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 2;
 
 /**
  * Generates 384-dimensional dense vector embeddings in controlled batches.
- * Configured with truncate: true and max_length: 512 to prevent token explosion.
- * Releases tensor memory between batches and yields to Node.js event loop.
+ * Configured with truncate: true and max_length: 256 to prevent token and attention matrix explosion.
+ * Releases tensor memory between batches and yields to Node.js event loop with GC.
  *
  * @param {Array<string>} chunks - Text chunks to embed
  * @returns {Promise<Array<Array<number>>>} List of 384-dimensional float vectors
@@ -66,11 +66,16 @@ async function generateEmbeddings(chunks) {
       totalChunks: chunks.length,
     });
 
-    let result = await model(batch, {
+    // Sanitize input chunks: stringify and clamp character length to 2048 to prevent tokenizer blowout
+    const sanitizedBatch = batch.map((item) =>
+      typeof item === "string" ? item.slice(0, 2048) : String(item || "").slice(0, 2048)
+    );
+
+    let result = await model(sanitizedBatch, {
       pooling: "mean",
       normalize: true,
       truncate: true,
-      max_length: 512,
+      max_length: 256,
     });
 
     const batchEmbeddings = result.tolist();
@@ -81,12 +86,16 @@ async function generateEmbeddings(chunks) {
     // Release tensor reference immediately
     result = null;
 
+    if (global.gc) {
+      global.gc();
+    }
+
     logMemory("Embedding:BatchDone", {
       batch: `${batchIndex}/${totalBatches}`,
     });
 
-    // Yield to event loop between batches so server handles keep-alive heartbeats and GC
-    await new Promise((resolve) => setImmediate(resolve));
+    // Yield to event loop with real delay so OS memory allocator and Node.js can reclaim native buffers
+    await new Promise((resolve) => setTimeout(resolve, 30));
   }
 
   return embeddings;

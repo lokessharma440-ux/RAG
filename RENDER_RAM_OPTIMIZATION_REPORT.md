@@ -168,7 +168,33 @@ MAX_PENDING_HEAVY_JOBS=5
 
 ---
 
-## 8. Rules Compliance Checklist
+## 8. Root Cause Diagnosis: Stall at 61% (Batch 2 OOM on Render Free)
+
+### The Incident:
+During repository ingestion of `SwasthyaSetu` (226 chunks), progress reached:
+`Computing embeddings: 8 of 226 code chunks (61%)... (61%)`
+and stalled indefinitely.
+
+### Diagnostic Reproduction & Findings:
+1. **Batch 1 (Chunks 0..8):** Completed with RSS jumping from 171.4 MB to 409.4 MB.
+2. **Batch 2 (Chunks 8..16):** When batch size was 8 with `max_length: 512`, ONNX native tensor memory exploded to **696.4 MB RSS**.
+3. **Render Container Termination:** Because Render Free enforces a hard 512 MB cgroup memory cap, the Linux kernel OOM killer sent `SIGKILL` (signal 9) directly to the Node.js process. Because SIGKILL instantly aborts execution without executing JavaScript `catch` blocks or `process.on('exit')`, the database status remained frozen at `status: 'embedding', percentage: 61`.
+4. **Resolution Implemented:**
+   - Reduced `EMBEDDING_BATCH_SIZE` default to `2`.
+   - Reduced `max_length` to `256` tokens (reducing self-attention quadratic matrix memory from 600 MB down to < 40 MB).
+   - Pre-sliced text chunks to 2,048 characters to prevent tokenizer runaway on large multi-lingual dictionaries.
+   - Set V8 heap cap `--max-old-space-size=256` and enabled `--expose-gc` in `backend/package.json` and `render.yaml`.
+   - Added explicit manual garbage collection trigger (`if (global.gc) global.gc()`) and 30ms event-loop yielding between batches.
+   - Cleared chunk object references in `chunksToInsert` (`chunksToInsert[i + j] = null`) upon persistence to prevent heap accumulation.
+
+### Results Across All 225 Chunks of SwasthyaSetu:
+- **Batch 0..8 (Old):** 409.4 MB RSS
+- **Batch 8..16 (Old):** 696.4 MB RSS -> **OOM CRASH (Exit 137)**
+- **All 225 Chunks (Optimized):** Peak RSS **306.3 MB** | Final RSS **258.1 MB** | **100% Success with 0 Crashes**
+
+---
+
+## 9. Rules Compliance Checklist
 - [x] Work performed strictly on branch `feature/codebase-auditor`.
 - [x] Did not switch to `main`.
 - [x] Did not commit, push, merge, reset, revert, or deploy.

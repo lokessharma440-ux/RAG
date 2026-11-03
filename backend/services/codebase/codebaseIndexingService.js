@@ -1,6 +1,7 @@
+import fs from 'fs';
+import path from 'path';
 import { enqueueHeavyJob } from '../../utils/heavyJobQueue.js';
 import { logMemory } from '../../utils/memoryDiagnostics.js';
-import path from 'path';
 import { Codebase } from '../../models/Codebase.js';
 import { RepositoryFile } from '../../models/RepositoryFile.js';
 import { CodeChunk } from '../../models/CodeChunk.js';
@@ -53,172 +54,179 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
     logMemory('CodebaseIndexing:Start', { codebaseId });
 
     try {
-    // 1. DISCOVERING_FILES (15%)
-    await updateCodebaseProgress(codebaseId, 'discovering_files', 15, 'discovering_files', 'Discovering and filtering source code files...');
-    const discoveredFiles = await discoverRepositoryFiles(tempExtractDir, rootPrefix);
+      // 1. DISCOVERING_FILES (15%)
+      await updateCodebaseProgress(codebaseId, 'discovering_files', 15, 'discovering_files', 'Discovering and filtering source code files...');
+      const discoveredFiles = await discoverRepositoryFiles(tempExtractDir, rootPrefix);
 
-    if (discoveredFiles.length === 0) {
-      throw new Error('No supported, indexable source-code files were found in this repository.');
-    }
-
-    // Compute language statistics
-    const languageMap = {};
-    let totalLines = 0;
-    for (const f of discoveredFiles) {
-      totalLines += f.lineCount;
-      if (!languageMap[f.language]) {
-        languageMap[f.language] = { name: f.language, count: 0, bytes: 0 };
+      if (discoveredFiles.length === 0) {
+        throw new Error('No supported, indexable source-code files were found in this repository.');
       }
-      languageMap[f.language].count++;
-      languageMap[f.language].bytes += f.sizeBytes;
-    }
-    const languagesArray = Object.values(languageMap).sort((a, b) => b.bytes - a.bytes);
 
-    // 2. PARSING (35%)
-    await updateCodebaseProgress(codebaseId, 'parsing', 35, 'parsing', `Parsing code structure and extracting symbols across ${discoveredFiles.length} files...`);
+      // Compute language statistics
+      const languageMap = {};
+      let totalLines = 0;
+      for (const f of discoveredFiles) {
+        totalLines += f.lineCount;
+        if (!languageMap[f.language]) {
+          languageMap[f.language] = { name: f.language, count: 0, bytes: 0 };
+        }
+        languageMap[f.language].count++;
+        languageMap[f.language].bytes += f.sizeBytes;
+      }
+      const languagesArray = Object.values(languageMap).sort((a, b) => b.bytes - a.bytes);
 
-    const fileDocsToInsert = [];
-    const chunksToInsert = [];
-    const relationshipsToInsert = [];
+      // 2. PARSING (35%)
+      await updateCodebaseProgress(codebaseId, 'parsing', 35, 'parsing', `Parsing code structure and extracting symbols across ${discoveredFiles.length} files...`);
 
-    for (const file of discoveredFiles) {
-      // Chunk code file with line numbers
-      const parsedChunks = parseCodeFileIntoChunks(file.content, file.relativePath, file.language);
+      const fileDocsToInsert = [];
+      const chunksToInsert = [];
+      const relationshipsToInsert = [];
 
-      // Extract cross-file relationships
-      const rels = extractFileRelationships(file.relativePath, file.content, file.language, codebaseId, ownerUserId);
-      relationshipsToInsert.push(...rels);
+      for (const file of discoveredFiles) {
+        // Chunk code file with line numbers
+        const parsedChunks = parseCodeFileIntoChunks(file.content, file.relativePath, file.language);
 
-      fileDocsToInsert.push({
-        ownerUserId,
-        repositoryId: codebaseId,
-        relativePath: file.relativePath,
-        language: file.language,
-        extension: file.extension,
-        fileSize: file.sizeBytes,
-        fileHash: file.contentHash,
-        lineCount: file.lineCount,
-        content: file.content,
-        chunkCount: parsedChunks.length,
-      });
+        // Extract cross-file relationships
+        const rels = extractFileRelationships(file.relativePath, file.content, file.language, codebaseId, ownerUserId);
+        relationshipsToInsert.push(...rels);
 
-      for (const chunk of parsedChunks) {
-        chunksToInsert.push({
+        fileDocsToInsert.push({
           ownerUserId,
           repositoryId: codebaseId,
           relativePath: file.relativePath,
           language: file.language,
-          chunkType: chunk.chunkType,
-          symbolName: chunk.symbolName,
-          startLine: chunk.startLine,
-          endLine: chunk.endLine,
-          content: chunk.content,
-          contentHash: chunk.contentHash,
-          rawTextForEmbedding: `${file.relativePath} ${chunk.symbolName || ''}\n${chunk.content}`,
+          extension: file.extension,
+          fileSize: file.sizeBytes,
+          fileHash: file.contentHash,
+          lineCount: file.lineCount,
+          content: file.content,
+          chunkCount: parsedChunks.length,
         });
-      }
-    }
 
-    // Persist RepositoryFiles first
-    const savedFiles = await RepositoryFile.insertMany(fileDocsToInsert, { ordered: false });
-    const fileIdMap = new Map();
-    for (const sf of savedFiles) {
-      fileIdMap.set(sf.relativePath, sf._id);
-    }
-    // Release large file content buffers from memory immediately
-    fileDocsToInsert.length = 0;
-    logMemory('CodebaseIndexing:FilesPersisted', { codebaseId, filesCount: savedFiles.length });
-
-    // 3. EMBEDDING (60%)
-    await updateCodebaseProgress(codebaseId, 'embedding', 60, 'embedding', `Computing 384-d local vector embeddings for ${chunksToInsert.length} code chunks...`);
-
-    // Conservative batch size (default 8) to maintain low RAM ceiling on Render Free
-    const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 8;
-    for (let i = 0; i < chunksToInsert.length; i += BATCH_SIZE) {
-      const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
-      const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
-      const embeddings = await generateEmbeddings(textsToEmbed);
-
-      for (let j = 0; j < batch.length; j++) {
-        batch[j].embedding = embeddings[j];
-        batch[j].fileId = fileIdMap.get(batch[j].relativePath) || savedFiles[0]._id;
-        delete batch[j].rawTextForEmbedding;
-      }
-
-      // Persist chunk embeddings incrementally per batch to avoid accumulating large vector arrays in RAM
-      await CodeChunk.insertMany(batch, { ordered: false });
-
-      const processedCount = Math.min(i + BATCH_SIZE, chunksToInsert.length);
-      const pct = Math.min(85, Math.round(60 + (processedCount / chunksToInsert.length) * 25));
-      await updateCodebaseProgress(
-        codebaseId,
-        'embedding',
-        pct,
-        'embedding',
-        `Computing embeddings: ${processedCount} of ${chunksToInsert.length} code chunks (${pct}%)...`
-      );
-
-      // Clean local batch references and yield event loop
-      batch.length = 0;
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-
-    // 4. INDEXING (85%)
-    await updateCodebaseProgress(codebaseId, 'indexing', 85, 'indexing', 'Persisting vector indexes and cross-file relationships...');
-
-    if (relationshipsToInsert.length > 0) {
-      await CodeRelationship.insertMany(relationshipsToInsert, { ordered: false });
-    }
-
-    // 5. READY (100%)
-    await Codebase.findByIdAndUpdate(codebaseId, {
-      status: 'ready',
-      progress: {
-        stage: 'ready',
-        percentage: 100,
-        message: 'Repository successfully indexed and ready for intelligence queries.',
-      },
-      stats: {
-        totalFiles: discoveredFiles.length,
-        indexedFiles: discoveredFiles.length,
-        skippedFiles: 0,
-        totalChunks: chunksToInsert.length,
-        totalLines,
-        languages: languagesArray,
-      },
-      errorMessage: null,
-    });
-    logMemory('CodebaseIndexing:Done', { codebaseId, totalChunks: chunksToInsert.length });
-  } catch (err) {
-    console.error(`[Indexing Error] Repository ${codebaseId} indexing failed:`, err);
-    logMemory('CodebaseIndexing:Failed', { codebaseId, error: err.message });
-    await Codebase.findByIdAndUpdate(codebaseId, {
-      status: 'failed',
-      progress: {
-        stage: 'failed',
-        percentage: 0,
-        message: err.message || 'Indexing failed.',
-      },
-      errorMessage: err.message || 'Repository indexing failed.',
-    });
-  } finally {
-    // Guaranteed cleanup of temporary directory and archive file without deleting parent temp directory
-    if (tempExtractDir) await cleanupDirectory(tempExtractDir);
-    if (tempZipPath) {
-      try {
-        if (fs.existsSync(tempZipPath)) {
-          const stat = await fs.promises.stat(tempZipPath);
-          if (stat.isDirectory()) {
-            await cleanupDirectory(tempZipPath);
-          } else {
-            await fs.promises.unlink(tempZipPath);
-          }
+        for (const chunk of parsedChunks) {
+          chunksToInsert.push({
+            ownerUserId,
+            repositoryId: codebaseId,
+            relativePath: file.relativePath,
+            language: file.language,
+            chunkType: chunk.chunkType,
+            symbolName: chunk.symbolName,
+            startLine: chunk.startLine,
+            endLine: chunk.endLine,
+            content: chunk.content,
+            contentHash: chunk.contentHash,
+            rawTextForEmbedding: `${file.relativePath} ${chunk.symbolName || ''}\n${chunk.content}`,
+          });
         }
-      } catch (cleanErr) {
-        console.warn(`[Cleanup Warning] Could not remove ${tempZipPath}:`, cleanErr.message);
+      }
+
+      // Persist RepositoryFiles first
+      const savedFiles = await RepositoryFile.insertMany(fileDocsToInsert, { ordered: false });
+      const fileIdMap = new Map();
+      for (const sf of savedFiles) {
+        fileIdMap.set(sf.relativePath, sf._id);
+      }
+      // Release large file content buffers from memory immediately
+      fileDocsToInsert.length = 0;
+      logMemory('CodebaseIndexing:FilesPersisted', { codebaseId, filesCount: savedFiles.length });
+
+      // 3. EMBEDDING (60%)
+      const totalChunksCount = chunksToInsert.length;
+      await updateCodebaseProgress(codebaseId, 'embedding', 60, 'embedding', `Computing 384-d local vector embeddings for ${totalChunksCount} code chunks...`);
+
+      // Conservative batch size (default 4) to maintain low RAM ceiling on Render Free
+      const BATCH_SIZE = parseInt(process.env.CODEBASE_EMBEDDING_BATCH_SIZE, 10) || 4;
+      for (let i = 0; i < totalChunksCount; i += BATCH_SIZE) {
+        const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
+        const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
+        const embeddings = await generateEmbeddings(textsToEmbed);
+
+        for (let j = 0; j < batch.length; j++) {
+          batch[j].embedding = embeddings[j];
+          batch[j].fileId = fileIdMap.get(batch[j].relativePath) || savedFiles[0]._id;
+          delete batch[j].rawTextForEmbedding;
+        }
+
+        // Persist chunk embeddings incrementally per batch to avoid accumulating large vector arrays in RAM
+        await CodeChunk.insertMany(batch, { ordered: false });
+
+        // Dereference inserted chunks in parent array so V8 GC can collect them immediately
+        for (let j = 0; j < batch.length; j++) {
+          chunksToInsert[i + j] = null;
+        }
+
+        const processedCount = Math.min(i + BATCH_SIZE, totalChunksCount);
+        const pct = Math.min(85, Math.round(60 + (processedCount / totalChunksCount) * 25));
+        await updateCodebaseProgress(
+          codebaseId,
+          'embedding',
+          pct,
+          'embedding',
+          `Computing embeddings: ${processedCount} of ${totalChunksCount} code chunks (${pct}%)...`
+        );
+
+        // Clean local batch references and yield event loop with pause for OS memory reclamation
+        batch.length = 0;
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      // 4. INDEXING (85%)
+      await updateCodebaseProgress(codebaseId, 'indexing', 85, 'indexing', 'Persisting vector indexes and cross-file relationships...');
+
+      if (relationshipsToInsert.length > 0) {
+        await CodeRelationship.insertMany(relationshipsToInsert, { ordered: false });
+        relationshipsToInsert.length = 0;
+      }
+
+      // 5. READY (100%)
+      await Codebase.findByIdAndUpdate(codebaseId, {
+        status: 'ready',
+        progress: {
+          stage: 'ready',
+          percentage: 100,
+          message: 'Repository successfully indexed and ready for intelligence queries.',
+        },
+        stats: {
+          totalFiles: discoveredFiles.length,
+          indexedFiles: discoveredFiles.length,
+          skippedFiles: 0,
+          totalChunks: totalChunksCount,
+          totalLines,
+          languages: languagesArray,
+        },
+        errorMessage: null,
+      });
+      logMemory('CodebaseIndexing:Done', { codebaseId, totalChunks: totalChunksCount });
+    } catch (err) {
+      console.error(`[Indexing Error] Repository ${codebaseId} indexing failed:`, err);
+      logMemory('CodebaseIndexing:Failed', { codebaseId, error: err.message });
+      await Codebase.findByIdAndUpdate(codebaseId, {
+        status: 'failed',
+        progress: {
+          stage: 'failed',
+          percentage: 0,
+          message: err.message || 'Indexing failed.',
+        },
+        errorMessage: err.message || 'Repository indexing failed.',
+      });
+    } finally {
+      // Guaranteed cleanup of temporary directory and archive file without deleting parent temp directory
+      if (tempExtractDir) await cleanupDirectory(tempExtractDir);
+      if (tempZipPath) {
+        try {
+          if (fs.existsSync(tempZipPath)) {
+            const stat = await fs.promises.stat(tempZipPath);
+            if (stat.isDirectory()) {
+              await cleanupDirectory(tempZipPath);
+            } else {
+              await fs.promises.unlink(tempZipPath);
+            }
+          }
+        } catch (cleanErr) {
+          console.warn(`[Cleanup Warning] Could not remove ${tempZipPath}:`, cleanErr.message);
+        }
       }
     }
-  }
   }, { type: 'codebase_indexing', codebaseId });
 }
 
