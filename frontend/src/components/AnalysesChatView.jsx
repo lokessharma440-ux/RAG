@@ -268,7 +268,7 @@ export default function AnalysesChatView({
                                   onClick={() => toggleSource(msg.id, i)}
                                 >
                                   <FileText size={12} className="source-file-icon" />
-                                  <span className="source-doc-name">{src.documentName}</span>
+                                  <span className="source-doc-name">{src.documentName || src.originalName || 'Document'}</span>
                                   {src.pageNumber && (
                                     <span className="source-page-badge font-mono">
                                       p.{src.pageNumber}

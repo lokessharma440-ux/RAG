@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import DvLogo from './DvLogo.jsx';
+import { getApiUrl } from '../config/api.js';
 import './AuthScreen.css';
 
 export default function AuthScreen({
@@ -18,7 +19,7 @@ export default function AuthScreen({
 
   // Pre-warm the backend container as soon as the auth screen loads
   useEffect(() => {
-    fetch('/api/health').catch(() => {});
+    fetch(getApiUrl('/api/health')).catch(() => {});
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -45,7 +46,7 @@ export default function AuthScreen({
       setLoadingSeconds((prev) => prev + 1);
     }, 1000);
 
-    const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const endpoint = getApiUrl(mode === 'login' ? '/api/auth/login' : '/api/auth/register');
     const controller = new AbortController();
     // 90-second timeout safely accommodates Render free-tier cold starts (which take 35-65s)
     const timeoutId = setTimeout(() => controller.abort(), 90000);
@@ -201,7 +202,9 @@ export default function AuthScreen({
 
             {loading && loadingSeconds >= 5 && (
               <p className="dev-auth-wake-notice">
-                Free-tier cloud servers sleep when idle. Spinning up container ({loadingSeconds}s)... please wait.
+                {loadingSeconds < 25
+                  ? `Free-tier cloud servers sleep when idle. Spinning up container (${loadingSeconds}s)... please wait.`
+                  : `Still spinning up container (${loadingSeconds}s)... Cold starts take up to 50s. If running locally, verify backend on port 5000.`}
               </p>
             )}
           </form>

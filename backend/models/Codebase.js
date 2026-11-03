@@ -77,6 +77,22 @@ const codebaseSchema = new mongoose.Schema(
           bytes: { type: Number, default: 0 },
         },
       ],
+      timings: {
+        fileDiscoveryMs: { type: Number, default: 0 },
+        changeDetectionMs: { type: Number, default: 0 },
+        parsingMs: { type: Number, default: 0 },
+        embeddingMs: { type: Number, default: 0 },
+        indexingMs: { type: Number, default: 0 },
+        totalDurationMs: { type: Number, default: 0 },
+      },
+    },
+    incrementalStats: {
+      unchangedFiles: { type: Number, default: 0 },
+      modifiedFiles: { type: Number, default: 0 },
+      newFiles: { type: Number, default: 0 },
+      deletedFiles: { type: Number, default: 0 },
+      reusedChunks: { type: Number, default: 0 },
+      newChunksEmbedded: { type: Number, default: 0 },
     },
     errorMessage: {
       type: String,

@@ -89,22 +89,40 @@ router.post('/github', async (req, res) => {
     // 1. Fetch metadata
     const metadata = await fetchGitHubRepoMetadata(owner, repo);
 
-    // 2. Create Codebase document in DB
-    const codebase = await Codebase.create({
+    // 2. Check if repository already exists for this user (canonical URL match for incremental indexing)
+    let codebase = await Codebase.findOne({
       ownerUserId: req.user._id,
-      name: metadata.name || repo,
-      description: metadata.description || `Imported from ${normalizedUrl}`,
-      sourceType: 'github',
       sourceUrl: normalizedUrl,
-      defaultBranch: userBranch || branch || metadata.defaultBranch || 'main',
-      indexedCommitSha: metadata.commitSha,
-      status: 'fetching',
-      progress: {
+    });
+
+    let statusCode = 201;
+    if (codebase) {
+      statusCode = 200;
+      codebase.status = 'fetching';
+      codebase.indexedCommitSha = metadata.commitSha || codebase.indexedCommitSha;
+      codebase.progress = {
         stage: 'fetching',
         percentage: 5,
-        message: 'Downloading repository archive from GitHub...',
-      },
-    });
+        message: 'Re-syncing repository archive from GitHub for incremental indexing...',
+      };
+      await codebase.save();
+    } else {
+      codebase = await Codebase.create({
+        ownerUserId: req.user._id,
+        name: metadata.name || repo,
+        description: metadata.description || `Imported from ${normalizedUrl}`,
+        sourceType: 'github',
+        sourceUrl: normalizedUrl,
+        defaultBranch: userBranch || branch || metadata.defaultBranch || 'main',
+        indexedCommitSha: metadata.commitSha,
+        status: 'fetching',
+        progress: {
+          stage: 'fetching',
+          percentage: 5,
+          message: 'Downloading repository archive from GitHub...',
+        },
+      });
+    }
 
     // 3. Kick off async ingestion job
     const runIngestion = async () => {
@@ -136,7 +154,7 @@ router.post('/github', async (req, res) => {
     // Run in background
     runIngestion().catch(() => {});
 
-    return res.status(201).json({
+    return res.status(statusCode).json({
       success: true,
       message: `Repository "${metadata.name}" import initiated.`,
       data: codebase,

@@ -47,6 +47,20 @@ const documentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    contentHash: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    isDuplicate: {
+      type: Boolean,
+      default: false,
+    },
+    duplicateOfDocId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Document',
+      default: null,
+    },
     chunkCount: {
       type: Number,
       default: 0,
@@ -89,5 +103,6 @@ const documentSchema = new mongoose.Schema(
 
 // Compound index for efficient multi-tenant document listings and status filtering
 documentSchema.index({ userId: 1, status: 1, createdAt: -1 });
+documentSchema.index({ userId: 1, contentHash: 1 });
 
 export const Document = mongoose.model('Document', documentSchema);

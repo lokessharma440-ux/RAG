@@ -65,6 +65,9 @@ router.post('/', async (req, res) => {
         answer: result.answer,
         reply: result.answer,
         sources: result.sources,
+        citations: result.citations || result.sources || [],
+        evidenceScore: result.evidenceScore ?? 1.0,
+        isSufficient: result.isSufficient ?? true,
         cached: result.cached || false,
       },
     });

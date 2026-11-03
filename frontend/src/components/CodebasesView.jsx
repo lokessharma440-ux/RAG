@@ -328,7 +328,12 @@ export default function CodebasesView({
                       />
                     </div>
                     <span className="dev-indexing-progress-msg font-mono">
-                      {cb.progress?.message ? (cb.progress.message.includes('%') ? cb.progress.message : `${cb.progress.message} (${cb.progress.percentage || 0}%)`) : `Indexing in progress... (${cb.progress?.percentage || 0}%)`}
+                      {(() => {
+                        const rawMsg = cb.progress?.message || 'Indexing repository...';
+                        const pct = cb.progress?.percentage ?? 0;
+                        if (rawMsg.includes('%')) return rawMsg;
+                        return `${rawMsg.replace(/\.+$/, '')} (${pct}%)`;
+                      })()}
                     </span>
                   </div>
                 )}

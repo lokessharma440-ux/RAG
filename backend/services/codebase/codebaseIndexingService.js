@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import mongoose from 'mongoose';
 import { enqueueHeavyJob } from '../../utils/heavyJobQueue.js';
 import { logMemory } from '../../utils/memoryDiagnostics.js';
 import { Codebase } from '../../models/Codebase.js';
@@ -45,13 +46,20 @@ export async function updateCodebaseProgress(codebaseId, status, percentage, sta
  * @param {string} [rootPrefix='']
  * @param {string|null} [tempZipPath=null]
  */
-export async function processAndIndexRepository(codebaseId, tempExtractDir, rootPrefix = '', tempZipPath = null) {
+export async function processAndIndexRepository(codebaseId, tempExtractDir, rootPrefix = '', tempZipPath = null, options = {}) {
   return enqueueHeavyJob(async () => {
     const codebase = await Codebase.findById(codebaseId);
     if (!codebase) return;
 
     const ownerUserId = codebase.ownerUserId;
     logMemory('CodebaseIndexing:Start', { codebaseId });
+
+    const t0 = performance.now();
+    let fileDiscoveryMs = 0;
+    let changeDetectionMs = 0;
+    let parsingMs = 0;
+    let embeddingMs = 0;
+    let indexingMs = 0;
 
     try {
       // 1. DISCOVERING_FILES (15%)
@@ -74,39 +82,196 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         languageMap[f.language].bytes += f.sizeBytes;
       }
       const languagesArray = Object.values(languageMap).sort((a, b) => b.bytes - a.bytes);
+      fileDiscoveryMs = Math.round(performance.now() - t0);
 
-      // 2. PARSING (35%)
-      await updateCodebaseProgress(codebaseId, 'parsing', 35, 'parsing', `Parsing code structure and extracting symbols across ${discoveredFiles.length} files...`);
+      // 2. INCREMENTAL CHANGE DETECTION & PRUNING
+      await updateCodebaseProgress(codebaseId, 'discovering_files', 25, 'discovering_files', 'Comparing file hashes against existing index...');
 
-      const fileDocsToInsert = [];
-      const chunksToInsert = [];
-      const relationshipsToInsert = [];
+      const existingFiles = await RepositoryFile.find({ repositoryId: codebaseId, ownerUserId }).lean();
+      const existingFileMap = new Map();
+      for (const ef of existingFiles) {
+        existingFileMap.set(ef.relativePath, ef);
+      }
+
+      const discoveredMap = new Map();
+      for (const df of discoveredFiles) {
+        discoveredMap.set(df.relativePath, df);
+      }
+
+      // Identify deleted files (previously indexed but no longer present)
+      const deletedFileIds = [];
+      const deletedRelativePaths = [];
+      for (const ef of existingFiles) {
+        if (!discoveredMap.has(ef.relativePath)) {
+          deletedFileIds.push(ef._id);
+          deletedRelativePaths.push(ef.relativePath);
+        }
+      }
+
+      if (deletedFileIds.length > 0) {
+        await Promise.all([
+          RepositoryFile.deleteMany({ _id: { $in: deletedFileIds } }),
+          CodeChunk.deleteMany({ fileId: { $in: deletedFileIds } }),
+          CodeRelationship.deleteMany({
+            repositoryId: codebaseId,
+            sourcePath: { $in: deletedRelativePaths },
+          }),
+        ]);
+        console.log(`[Incremental Indexing] Pruned ${deletedFileIds.length} deleted files from codebase ${codebaseId}`);
+      }
+
+      // Classify discovered files: unchanged vs modified vs new
+      const filesToProcess = [];
+      let unchangedFilesCount = 0;
 
       for (const file of discoveredFiles) {
-        // Chunk code file with line numbers
-        const parsedChunks = parseCodeFileIntoChunks(file.content, file.relativePath, file.language);
+        const existing = existingFileMap.get(file.relativePath);
+        if (existing && existing.fileHash === file.contentHash) {
+          unchangedFilesCount++;
+        } else {
+          filesToProcess.push({ file, existing });
+        }
+      }
 
-        // Extract cross-file relationships
+      const modifiedFilesCount = filesToProcess.filter((f) => Boolean(f.existing)).length;
+      const newFilesCount = filesToProcess.length - modifiedFilesCount;
+      changeDetectionMs = Math.round(performance.now() - (t0 + fileDiscoveryMs));
+
+      console.log(
+        `[Incremental Indexing] Total: ${discoveredFiles.length} | Unchanged: ${unchangedFilesCount} | Modified: ${modifiedFilesCount} | New: ${newFilesCount} | Deleted: ${deletedFileIds.length}`
+      );
+
+      // Fast Path: If all files are completely unchanged, avoid 100% of parsing and embedding
+      if (filesToProcess.length === 0 && deletedFileIds.length === 0 && existingFiles.length > 0) {
+        const totalDurationMs = Math.round(performance.now() - t0);
+        const totalChunksCount = await CodeChunk.countDocuments({ repositoryId: codebaseId, ownerUserId });
+        await Codebase.findByIdAndUpdate(codebaseId, {
+          status: 'ready',
+          progress: {
+            stage: 'ready',
+            percentage: 100,
+            message: `All ${discoveredFiles.length} files verified unchanged. Reused existing vector indexes.`,
+          },
+          stats: {
+            totalFiles: discoveredFiles.length,
+            indexedFiles: discoveredFiles.length,
+            skippedFiles: 0,
+            totalChunks: totalChunksCount,
+            totalLines,
+            languages: languagesArray,
+            timings: {
+              fileDiscoveryMs,
+              changeDetectionMs,
+              parsingMs: 0,
+              embeddingMs: 0,
+              indexingMs: 0,
+              totalDurationMs,
+            },
+          },
+          incrementalStats: {
+            unchangedFiles: unchangedFilesCount,
+            modifiedFiles: 0,
+            newFiles: 0,
+            deletedFiles: 0,
+            reusedChunks: totalChunksCount,
+            newChunksEmbedded: 0,
+          },
+          errorMessage: null,
+        });
+
+        console.log(`[DEVMIND_METRICS] Codebase ${codebaseId} zero-cost re-index in ${totalDurationMs}ms (Discovery: ${fileDiscoveryMs}ms | Diff: ${changeDetectionMs}ms)`);
+        logMemory('CodebaseIndexing:IncrementalZeroCostDone', { codebaseId, files: discoveredFiles.length, totalDurationMs });
+        return;
+      }
+
+      // 3. PARSING CHANGED & NEW FILES (35%)
+      await updateCodebaseProgress(
+        codebaseId,
+        'parsing',
+        35,
+        'parsing',
+        `Parsing ${filesToProcess.length} modified/new files (${unchangedFilesCount} unchanged reused)...`
+      );
+
+      const chunksToInsert = [];
+      const relationshipsToInsert = [];
+      const fileIdMap = new Map();
+
+      // Preserve IDs of unchanged files
+      for (const ef of existingFiles) {
+        if (!deletedRelativePaths.includes(ef.relativePath) && !filesToProcess.some((p) => p.file.relativePath === ef.relativePath)) {
+          fileIdMap.set(ef.relativePath, ef._id);
+        }
+      }
+
+      // Batch delete old chunks and relationships for modified files in a single pass
+      const modifiedFiles = filesToProcess.filter((p) => Boolean(p.existing));
+      if (modifiedFiles.length > 0) {
+        const modifiedFileIds = modifiedFiles.map((m) => m.existing._id);
+        const modifiedFilePaths = modifiedFiles.map((m) => m.file.relativePath);
+        await Promise.all([
+          CodeChunk.deleteMany({ fileId: { $in: modifiedFileIds } }),
+          CodeRelationship.deleteMany({
+            repositoryId: codebaseId,
+            sourcePath: { $in: modifiedFilePaths },
+          }),
+        ]);
+      }
+
+      const repositoryFileOps = [];
+
+      for (const { file, existing } of filesToProcess) {
+        const parsedChunks = parseCodeFileIntoChunks(file.content, file.relativePath, file.language);
         const rels = extractFileRelationships(file.relativePath, file.content, file.language, codebaseId, ownerUserId);
         relationshipsToInsert.push(...rels);
 
-        fileDocsToInsert.push({
-          ownerUserId,
-          repositoryId: codebaseId,
-          relativePath: file.relativePath,
-          language: file.language,
-          extension: file.extension,
-          fileSize: file.sizeBytes,
-          fileHash: file.contentHash,
-          lineCount: file.lineCount,
-          content: file.content,
-          chunkCount: parsedChunks.length,
-        });
+        let fileId;
+        if (existing) {
+          fileId = existing._id;
+          repositoryFileOps.push({
+            updateOne: {
+              filter: { _id: existing._id },
+              update: {
+                $set: {
+                  fileHash: file.contentHash,
+                  fileSize: file.sizeBytes,
+                  lineCount: file.lineCount,
+                  content: file.content,
+                  chunkCount: parsedChunks.length,
+                  language: file.language,
+                  extension: file.extension,
+                },
+              },
+            },
+          });
+        } else {
+          fileId = new mongoose.Types.ObjectId();
+          repositoryFileOps.push({
+            insertOne: {
+              document: {
+                _id: fileId,
+                ownerUserId,
+                repositoryId: codebaseId,
+                relativePath: file.relativePath,
+                language: file.language,
+                extension: file.extension,
+                fileSize: file.sizeBytes,
+                fileHash: file.contentHash,
+                lineCount: file.lineCount,
+                content: file.content,
+                chunkCount: parsedChunks.length,
+              },
+            },
+          });
+        }
+
+        fileIdMap.set(file.relativePath, fileId);
 
         for (const chunk of parsedChunks) {
           chunksToInsert.push({
             ownerUserId,
             repositoryId: codebaseId,
+            fileId,
             relativePath: file.relativePath,
             language: file.language,
             chunkType: chunk.chunkType,
@@ -120,90 +285,117 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         }
       }
 
-      // Persist RepositoryFiles first
-      const savedFiles = await RepositoryFile.insertMany(fileDocsToInsert, { ordered: false });
-      const fileIdMap = new Map();
-      for (const sf of savedFiles) {
-        fileIdMap.set(sf.relativePath, sf._id);
+      // Execute single bulkWrite for all modified/new RepositoryFiles
+      if (repositoryFileOps.length > 0) {
+        await RepositoryFile.bulkWrite(repositoryFileOps, { ordered: false });
       }
-      // Release large file content buffers from memory immediately
-      fileDocsToInsert.length = 0;
-      logMemory('CodebaseIndexing:FilesPersisted', { codebaseId, filesCount: savedFiles.length });
 
-      // 3. EMBEDDING (60%)
-      const totalChunksCount = chunksToInsert.length;
-      await updateCodebaseProgress(codebaseId, 'embedding', 60, 'embedding', `Computing 384-d local vector embeddings for ${totalChunksCount} code chunks...`);
+      parsingMs = Math.round(performance.now() - (t0 + fileDiscoveryMs + changeDetectionMs));
 
-      // Balanced batch size (default 8) to optimize speed while keeping RAM safely under 400MB
-      const BATCH_SIZE = parseInt(process.env.CODEBASE_EMBEDDING_BATCH_SIZE, 10) || 8;
+      // 4. EMBEDDING (60%)
+      const chunksToEmbedCount = chunksToInsert.length;
+      await updateCodebaseProgress(
+        codebaseId,
+        'embedding',
+        60,
+        'embedding',
+        chunksToEmbedCount > 0
+          ? `Computing embeddings for ${chunksToEmbedCount} new/modified chunks...`
+          : 'No chunks require embedding (all reused from existing index)...'
+      );
+
+      const BATCH_SIZE = parseInt(process.env.CODEBASE_EMBEDDING_BATCH_SIZE, 10) || 2;
       let lastReportedPct = 60;
 
-      for (let i = 0; i < totalChunksCount; i += BATCH_SIZE) {
+      for (let i = 0; i < chunksToEmbedCount; i += BATCH_SIZE) {
         const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
         const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
         const embeddings = await generateEmbeddings(textsToEmbed);
 
         for (let j = 0; j < batch.length; j++) {
           batch[j].embedding = embeddings[j];
-          batch[j].fileId = fileIdMap.get(batch[j].relativePath) || savedFiles[0]._id;
           delete batch[j].rawTextForEmbedding;
         }
 
-        // Persist chunk embeddings incrementally per batch
         await CodeChunk.insertMany(batch, { ordered: false });
 
-        // Dereference inserted chunks in parent array so V8 GC can collect them immediately
         for (let j = 0; j < batch.length; j++) {
           chunksToInsert[i + j] = null;
         }
 
-        const processedCount = Math.min(i + BATCH_SIZE, totalChunksCount);
-        const pct = Math.min(85, Math.round(60 + (processedCount / totalChunksCount) * 25));
+        const processedCount = Math.min(i + BATCH_SIZE, chunksToEmbedCount);
+        const pct = Math.min(85, Math.round(60 + (processedCount / chunksToEmbedCount) * 25));
 
-        // Update database progress only when percentage advances or on the final batch to reduce Atlas latency
-        if (pct >= lastReportedPct + 2 || processedCount === totalChunksCount) {
+        if (pct >= lastReportedPct + 2 || processedCount === chunksToEmbedCount) {
           lastReportedPct = pct;
           await updateCodebaseProgress(
             codebaseId,
             'embedding',
             pct,
             'embedding',
-            `Computing embeddings: ${processedCount} of ${totalChunksCount} code chunks (${pct}%)...`
+            `Computing embeddings: ${processedCount} of ${chunksToEmbedCount} chunks`
           );
         }
 
-        // Clean local batch references and yield event loop
         batch.length = 0;
         await new Promise((resolve) => setImmediate(resolve));
       }
 
-      // 4. INDEXING (85%)
-      await updateCodebaseProgress(codebaseId, 'indexing', 85, 'indexing', 'Persisting vector indexes and cross-file relationships...');
+      embeddingMs = Math.round(performance.now() - (t0 + fileDiscoveryMs + changeDetectionMs + parsingMs));
+
+      // 5. INDEXING RELATIONSHIPS (85%)
+      await updateCodebaseProgress(codebaseId, 'indexing', 85, 'indexing', 'Persisting updated vector indexes and dependencies...');
 
       if (relationshipsToInsert.length > 0) {
         await CodeRelationship.insertMany(relationshipsToInsert, { ordered: false });
         relationshipsToInsert.length = 0;
       }
 
-      // 5. READY (100%)
+      // Count total chunks in repository (both existing unchanged and newly added)
+      const finalTotalChunks = await CodeChunk.countDocuments({ repositoryId: codebaseId, ownerUserId });
+
+      indexingMs = Math.round(performance.now() - (t0 + fileDiscoveryMs + changeDetectionMs + parsingMs + embeddingMs));
+      const totalDurationMs = Math.round(performance.now() - t0);
+
+      // 6. READY (100%)
       await Codebase.findByIdAndUpdate(codebaseId, {
         status: 'ready',
         progress: {
           stage: 'ready',
           percentage: 100,
-          message: 'Repository successfully indexed and ready for intelligence queries.',
+          message: `Repository indexed: ${unchangedFilesCount} unchanged, ${modifiedFilesCount} modified, ${newFilesCount} new, ${deletedFileIds.length} deleted.`,
         },
         stats: {
           totalFiles: discoveredFiles.length,
           indexedFiles: discoveredFiles.length,
           skippedFiles: 0,
-          totalChunks: totalChunksCount,
+          totalChunks: finalTotalChunks,
           totalLines,
           languages: languagesArray,
+          timings: {
+            fileDiscoveryMs,
+            changeDetectionMs,
+            parsingMs,
+            embeddingMs,
+            indexingMs,
+            totalDurationMs,
+          },
+        },
+        incrementalStats: {
+          unchangedFiles: unchangedFilesCount,
+          modifiedFiles: modifiedFilesCount,
+          newFiles: newFilesCount,
+          deletedFiles: deletedFileIds.length,
+          reusedChunks: finalTotalChunks - chunksToEmbedCount,
+          newChunksEmbedded: chunksToEmbedCount,
         },
         errorMessage: null,
       });
-      logMemory('CodebaseIndexing:Done', { codebaseId, totalChunks: totalChunksCount });
+
+      console.log(
+        `[DEVMIND_METRICS] Codebase ${codebaseId} Indexed in ${totalDurationMs}ms (Discovery: ${fileDiscoveryMs}ms | Diff: ${changeDetectionMs}ms | Parse: ${parsingMs}ms | Embed: ${embeddingMs}ms | Index: ${indexingMs}ms)`
+      );
+      logMemory('CodebaseIndexing:Done', { codebaseId, totalChunks: finalTotalChunks, timings: { totalDurationMs, embeddingMs } });
     } catch (err) {
       console.error(`[Indexing Error] Repository ${codebaseId} indexing failed:`, err);
       logMemory('CodebaseIndexing:Failed', { codebaseId, error: err.message });
@@ -218,7 +410,7 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
       });
     } finally {
       // Guaranteed cleanup of temporary directory and archive file without deleting parent temp directory
-      if (tempExtractDir) await cleanupDirectory(tempExtractDir);
+      if (tempExtractDir && !options.preserveTempDir) await cleanupDirectory(tempExtractDir);
       if (tempZipPath) {
         try {
           if (fs.existsSync(tempZipPath)) {

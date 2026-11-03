@@ -182,7 +182,7 @@ export async function discoverRepositoryFiles(baseDir, rootPrefix = '', maxIndiv
         }
         await traverse(path.join(currentDir, entryName), path.join(relativePrefix, entryName));
       } else if (entry.isFile()) {
-        if (IGNORE_FILES.has(lowerName) || lowerName.endsWith('.min.js') || lowerName.endsWith('.min.css')) {
+        if (IGNORE_FILES.has(lowerName) || lowerName.endsWith('.min.js') || lowerName.endsWith('.min.css') || lowerName.endsWith('.bundle.js') || lowerName.endsWith('.chunk.js') || lowerName.endsWith('.map') || lowerName.endsWith('.min.mjs')) {
           continue;
         }
 

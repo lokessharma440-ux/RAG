@@ -1,3 +1,6 @@
+import crypto from 'crypto';
+import { verifyAnswerEvidence } from '../RAG/evidenceVerifier.js';
+import { createMetricsTracker } from '../utils/ragObservability.js';
 import { enqueueHeavyJob } from '../utils/heavyJobQueue.js';
 import { logMemory } from '../utils/memoryDiagnostics.js';
 import fs from 'fs';
@@ -206,6 +209,47 @@ export async function processDocumentBackground(docId, filePath, originalName, u
     const { text, pageCount } = await extractTextFromFile({ path: filePath }, ext);
     docRecord.extractedText = text;
 
+    const contentHash = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+    docRecord.contentHash = contentHash;
+
+    // Check for smart deduplication within user's permitted scope
+    if (parsedUserId) {
+      const existingDoc = await Document.findOne({
+        userId: parsedUserId,
+        contentHash,
+        status: 'ready',
+        _id: { $ne: docRecord._id },
+      });
+
+      if (existingDoc) {
+        const existingChunks = await DocumentChunk.find({ documentId: existingDoc._id }).lean();
+        if (existingChunks.length > 0) {
+          const clonedChunks = existingChunks.map((c) => ({
+            userId: parsedUserId,
+            documentId: docRecord._id,
+            chunkIndex: c.chunkIndex,
+            text: c.text,
+            embedding: c.embedding,
+            originalName,
+            pageNumber: c.pageNumber || 1,
+          }));
+
+          await DocumentChunk.deleteMany({ documentId: docRecord._id });
+          await DocumentChunk.insertMany(clonedChunks);
+          docRecord.status = 'ready';
+          docRecord.characterCount = existingDoc.characterCount || text.length;
+          docRecord.chunkCount = clonedChunks.length;
+          docRecord.pageCount = existingDoc.pageCount || pageCount;
+          docRecord.isDuplicate = true;
+          docRecord.duplicateOfDocId = existingDoc._id;
+          docRecord.errorMessage = null;
+          await docRecord.save();
+          logMemory('DocumentIngestion:DuplicateReused', { docId, duplicateOf: existingDoc._id, chunks: clonedChunks.length });
+          return;
+        }
+      }
+    }
+
     // 2. Divide text into chunks using structure-aware documentProcessor
     const defaultChunkSize = parseInt(process.env.RAG_CHUNK_SIZE, 10) || 1000;
     const defaultOverlap = parseInt(process.env.RAG_CHUNK_OVERLAP, 10) || 200;
@@ -327,6 +371,47 @@ export async function processAndSaveDocument(file, userId = null) {
     // 3. Extract text from disk or buffer
     const { text, pageCount } = await extractTextFromFile(file, ext);
     docRecord.extractedText = text;
+
+    const contentHash = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+    docRecord.contentHash = contentHash;
+
+    // Check for smart deduplication within user's permitted scope
+    if (parsedUserId) {
+      const existingDoc = await Document.findOne({
+        userId: parsedUserId,
+        contentHash,
+        status: 'ready',
+        _id: { $ne: docRecord._id },
+      });
+
+      if (existingDoc) {
+        const existingChunks = await DocumentChunk.find({ documentId: existingDoc._id }).lean();
+        if (existingChunks.length > 0) {
+          const clonedChunks = existingChunks.map((c) => ({
+            userId: parsedUserId,
+            documentId: docRecord._id,
+            chunkIndex: c.chunkIndex,
+            text: c.text,
+            embedding: c.embedding,
+            originalName,
+            pageNumber: c.pageNumber || 1,
+          }));
+
+          await DocumentChunk.deleteMany({ documentId: docRecord._id });
+          await DocumentChunk.insertMany(clonedChunks);
+          docRecord.status = 'ready';
+          docRecord.characterCount = existingDoc.characterCount || text.length;
+          docRecord.chunkCount = clonedChunks.length;
+          docRecord.pageCount = existingDoc.pageCount || pageCount;
+          docRecord.isDuplicate = true;
+          docRecord.duplicateOfDocId = existingDoc._id;
+          docRecord.errorMessage = null;
+          await docRecord.save();
+          logMemory('DocumentIngestion:DuplicateReused', { docId: docRecord._id, duplicateOf: existingDoc._id, chunks: clonedChunks.length });
+          return docRecord;
+        }
+      }
+    }
 
     // 4. Divide text into chunks using structure-aware documentProcessor
     const defaultChunkSize = parseInt(process.env.RAG_CHUNK_SIZE, 10) || 1000;
@@ -739,7 +824,7 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
   logMemory('DocumentRAG:RetrieveStart', { filterKeys: Object.keys(chunkFilter).join(',') });
   // 2. Fetch candidate chunks from database (strictly bounded by chunkFilter, plain lean objects)
   const storedChunks = await DocumentChunk.find(chunkFilter)
-    .select('documentId chunkIndex text embedding originalName')
+    .select('_id documentId chunkIndex text embedding originalName pageNumber')
     .lean();
   logMemory('DocumentRAG:RetrieveDone', { count: storedChunks.length });
 
@@ -786,12 +871,16 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
     const hybridScore = vectorScore + keywordBoost;
 
     return {
+      chunkId: chunk._id ? chunk._id.toString() : undefined,
       documentId: chunk.documentId.toString(),
       originalName: chunk.originalName,
+      documentName: chunk.originalName,
       chunkIndex: chunk.chunkIndex,
+      pageNumber: chunk.pageNumber || 1,
       text: chunk.text,
       score: hybridScore,
       vectorScore,
+      citation: `${chunk.originalName}${chunk.pageNumber ? ` (Page ${chunk.pageNumber})` : ''}`,
     };
   });
 
@@ -818,16 +907,22 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
  * @returns {Promise<{ answer: string, sources: Array<{ documentId: string, originalName: string, chunkIndex: number, text: string, score: number }> }>}
  */
 export async function queryDocumentRAG(question, documentIds = [], topK = 4, userId = null, options = {}) {
+  const tracker = createMetricsTracker(options.requestId, userId);
+  const stopRewriteTimer = tracker.startStage('queryRewriting');
+
   // Phase 2 & 3: Query Rewriting Integration
-  // Reformulate the raw query into a standalone retrieval query while preserving the original for answer synthesis.
   const conversationHistory = options.conversationHistory || [];
   const rewriteResult = await rewriteQuery(question, conversationHistory, options);
   const retrievalQuery = rewriteResult.rewrittenQuery || question;
+  stopRewriteTimer();
 
   // Compute question embedding once for both Semantic Cache lookup and potential chunk retrieval
+  const stopEmbedTimer = tracker.startStage('embeddingGeneration');
   const [queryEmbedding] = await generateEmbeddings([retrievalQuery.trim()]);
+  stopEmbedTimer();
 
   // Semantic Cache Lookup: Check if a semantically equivalent answer exists for this exact user & scope
+  const stopCacheTimer = tracker.startStage('cacheLookup');
   if (userId) {
     const cacheResult = await lookupSemanticCache({
       userId,
@@ -836,33 +931,63 @@ export async function queryDocumentRAG(question, documentIds = [], topK = 4, use
       documentIds,
       options,
     });
+    stopCacheTimer();
 
     if (cacheResult.hit) {
+      tracker.setMetric('cacheStatus', 'HIT');
+      tracker.finalizeAndLog({ cached: true });
       return {
         answer: cacheResult.answer,
         sources: cacheResult.sources,
+        citations: cacheResult.sources,
         rewrittenQuery: retrievalQuery,
         wasRewritten: rewriteResult.wasRewritten,
         cached: true,
         cacheSimilarity: cacheResult.similarity,
+        isSufficient: true,
+        evidenceScore: 1.0,
       };
     }
+  } else {
+    stopCacheTimer();
   }
 
+  const stopRetrieveTimer = tracker.startStage('retrieval');
   const retrieval = await retrieveRelevantChunks(retrievalQuery, documentIds, topK, userId);
+  stopRetrieveTimer();
+
+  tracker.setMetric('retrievedChunksCount', retrieval.sources?.length || 0);
 
   if (retrieval.emptyScopeMessage) {
+    tracker.finalizeAndLog({ emptyScope: true });
     return {
       answer: retrieval.emptyScopeMessage,
       sources: [],
+      citations: [],
       rewrittenQuery: retrievalQuery,
       wasRewritten: rewriteResult.wasRewritten,
       cached: false,
+      isSufficient: false,
+      evidenceScore: 0,
     };
   }
 
-  // Generate grounded answer using configured LLM Provider with the original question to maintain exact user intent
+  // Generate grounded answer using configured LLM Provider
+  const stopGenTimer = tracker.startStage('generation');
   const answer = await generateAnswer(question, retrieval.sources, options);
+  stopGenTimer();
+
+  // Evidence and Citation Verification
+  const stopEvidenceTimer = tracker.startStage('evidenceVerification');
+  const verified = verifyAnswerEvidence({
+    answer,
+    retrievedChunks: retrieval.sources,
+    userId,
+    validDocumentIds: documentIds,
+  });
+  stopEvidenceTimer();
+
+  tracker.setMetric('evidenceScore', verified.evidenceScore);
 
   // Store successful grounded answer in Semantic Cache
   if (userId && answer) {
@@ -871,15 +996,20 @@ export async function queryDocumentRAG(question, documentIds = [], topK = 4, use
       query: retrievalQuery,
       queryEmbedding,
       answer,
-      sources: retrieval.sources,
+      sources: verified.citations && verified.citations.length > 0 ? verified.citations : retrieval.sources,
       documentIds,
       options,
     }).catch(() => {});
   }
 
+  tracker.finalizeAndLog();
+
   return {
     answer,
     sources: retrieval.sources,
+    citations: verified.citations,
+    evidenceScore: verified.evidenceScore,
+    isSufficient: verified.isSufficient,
     rewrittenQuery: retrievalQuery,
     wasRewritten: rewriteResult.wasRewritten,
     cached: false,
