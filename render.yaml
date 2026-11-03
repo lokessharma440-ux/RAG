@@ -17,9 +17,9 @@ services:
       - key: NODE_OPTIONS
         value: "--expose-gc --max-old-space-size=256"
       - key: EMBEDDING_BATCH_SIZE
-        value: "2"
-      - key: CODEBASE_EMBEDDING_BATCH_SIZE
         value: "4"
+      - key: CODEBASE_EMBEDDING_BATCH_SIZE
+        value: "8"
       - key: MONGO_URI
         sync: false
       - key: GEMINI_API_KEY

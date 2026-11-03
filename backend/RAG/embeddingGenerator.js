@@ -38,13 +38,13 @@ async function getEmbeddingPipeline() {
   return initializationPromise;
 }
 
-// Bounded batch size: 2 is safe and prevents native tensor memory explosion on Render Free (512MB RAM)
-const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 2;
+// Bounded batch size: 4 is fast and stays well within the 512MB RAM ceiling on Render Free
+const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 4;
 
 /**
  * Generates 384-dimensional dense vector embeddings in controlled batches.
- * Configured with truncate: true and max_length: 256 to prevent token and attention matrix explosion.
- * Releases tensor memory between batches and yields to Node.js event loop with GC.
+ * Configured with truncate: true and max_length: 192 to balance high semantic accuracy and low latency.
+ * Periodically invokes GC and yields to the Node.js event loop without blocking CPU.
  *
  * @param {Array<string>} chunks - Text chunks to embed
  * @returns {Promise<Array<Array<number>>>} List of 384-dimensional float vectors
@@ -60,22 +60,16 @@ async function generateEmbeddings(chunks) {
     const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
     const batch = chunks.slice(i, i + BATCH_SIZE);
 
-    logMemory("Embedding:BatchStart", {
-      batch: `${batchIndex}/${totalBatches}`,
-      batchSize: batch.length,
-      totalChunks: chunks.length,
-    });
-
-    // Sanitize input chunks: stringify and clamp character length to 2048 to prevent tokenizer blowout
+    // Sanitize input chunks: stringify and clamp character length to 1500 to prevent tokenizer blowout
     const sanitizedBatch = batch.map((item) =>
-      typeof item === "string" ? item.slice(0, 2048) : String(item || "").slice(0, 2048)
+      typeof item === "string" ? item.slice(0, 1500) : String(item || "").slice(0, 1500)
     );
 
     let result = await model(sanitizedBatch, {
       pooling: "mean",
       normalize: true,
       truncate: true,
-      max_length: 256,
+      max_length: 192,
     });
 
     const batchEmbeddings = result.tolist();
@@ -86,16 +80,13 @@ async function generateEmbeddings(chunks) {
     // Release tensor reference immediately
     result = null;
 
-    if (global.gc) {
+    // Periodically hint GC every 8 batches (~32 chunks) rather than every micro-batch
+    if (global.gc && batchIndex % 8 === 0) {
       global.gc();
     }
 
-    logMemory("Embedding:BatchDone", {
-      batch: `${batchIndex}/${totalBatches}`,
-    });
-
-    // Yield to event loop with real delay so OS memory allocator and Node.js can reclaim native buffers
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Yield to event loop to allow heartbeats and I/O to process
+    await new Promise((resolve) => setImmediate(resolve));
   }
 
   return embeddings;

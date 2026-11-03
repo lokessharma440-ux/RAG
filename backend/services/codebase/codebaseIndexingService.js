@@ -134,8 +134,10 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
       const totalChunksCount = chunksToInsert.length;
       await updateCodebaseProgress(codebaseId, 'embedding', 60, 'embedding', `Computing 384-d local vector embeddings for ${totalChunksCount} code chunks...`);
 
-      // Conservative batch size (default 4) to maintain low RAM ceiling on Render Free
-      const BATCH_SIZE = parseInt(process.env.CODEBASE_EMBEDDING_BATCH_SIZE, 10) || 4;
+      // Balanced batch size (default 8) to optimize speed while keeping RAM safely under 400MB
+      const BATCH_SIZE = parseInt(process.env.CODEBASE_EMBEDDING_BATCH_SIZE, 10) || 8;
+      let lastReportedPct = 60;
+
       for (let i = 0; i < totalChunksCount; i += BATCH_SIZE) {
         const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
         const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
@@ -147,7 +149,7 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
           delete batch[j].rawTextForEmbedding;
         }
 
-        // Persist chunk embeddings incrementally per batch to avoid accumulating large vector arrays in RAM
+        // Persist chunk embeddings incrementally per batch
         await CodeChunk.insertMany(batch, { ordered: false });
 
         // Dereference inserted chunks in parent array so V8 GC can collect them immediately
@@ -157,17 +159,22 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
 
         const processedCount = Math.min(i + BATCH_SIZE, totalChunksCount);
         const pct = Math.min(85, Math.round(60 + (processedCount / totalChunksCount) * 25));
-        await updateCodebaseProgress(
-          codebaseId,
-          'embedding',
-          pct,
-          'embedding',
-          `Computing embeddings: ${processedCount} of ${totalChunksCount} code chunks (${pct}%)...`
-        );
 
-        // Clean local batch references and yield event loop with pause for OS memory reclamation
+        // Update database progress only when percentage advances or on the final batch to reduce Atlas latency
+        if (pct >= lastReportedPct + 2 || processedCount === totalChunksCount) {
+          lastReportedPct = pct;
+          await updateCodebaseProgress(
+            codebaseId,
+            'embedding',
+            pct,
+            'embedding',
+            `Computing embeddings: ${processedCount} of ${totalChunksCount} code chunks (${pct}%)...`
+          );
+        }
+
+        // Clean local batch references and yield event loop
         batch.length = 0;
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await new Promise((resolve) => setImmediate(resolve));
       }
 
       // 4. INDEXING (85%)
