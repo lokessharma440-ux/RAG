@@ -1,3 +1,4 @@
+import { logMemory } from './utils/memoryDiagnostics.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -202,6 +203,7 @@ export async function gracefulShutdown(signal = 'SIGTERM') {
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 MERN Backend Server running on http://0.0.0.0:${PORT}`);
+    logMemory('Server:Startup', { port: PORT });
     // Warm up local ONNX embedding model in background (does not block HTTP listening)
     warmupEmbeddingModel().catch((err) => {
       console.warn('[Embedding] Background model warmup warning:', err.message);

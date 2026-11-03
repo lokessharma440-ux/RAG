@@ -1,3 +1,5 @@
+import { enqueueHeavyJob } from '../../utils/heavyJobQueue.js';
+import { logMemory } from '../../utils/memoryDiagnostics.js';
 import path from 'path';
 import { Codebase } from '../../models/Codebase.js';
 import { RepositoryFile } from '../../models/RepositoryFile.js';
@@ -43,12 +45,14 @@ export async function updateCodebaseProgress(codebaseId, status, percentage, sta
  * @param {string|null} [tempZipPath=null]
  */
 export async function processAndIndexRepository(codebaseId, tempExtractDir, rootPrefix = '', tempZipPath = null) {
-  const codebase = await Codebase.findById(codebaseId);
-  if (!codebase) return;
+  return enqueueHeavyJob(async () => {
+    const codebase = await Codebase.findById(codebaseId);
+    if (!codebase) return;
 
-  const ownerUserId = codebase.ownerUserId;
+    const ownerUserId = codebase.ownerUserId;
+    logMemory('CodebaseIndexing:Start', { codebaseId });
 
-  try {
+    try {
     // 1. DISCOVERING_FILES (15%)
     await updateCodebaseProgress(codebaseId, 'discovering_files', 15, 'discovering_files', 'Discovering and filtering source code files...');
     const discoveredFiles = await discoverRepositoryFiles(tempExtractDir, rootPrefix);
@@ -121,13 +125,15 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
     for (const sf of savedFiles) {
       fileIdMap.set(sf.relativePath, sf._id);
     }
+    // Release large file content buffers from memory immediately
+    fileDocsToInsert.length = 0;
+    logMemory('CodebaseIndexing:FilesPersisted', { codebaseId, filesCount: savedFiles.length });
 
     // 3. EMBEDDING (60%)
     await updateCodebaseProgress(codebaseId, 'embedding', 60, 'embedding', `Computing 384-d local vector embeddings for ${chunksToInsert.length} code chunks...`);
 
-    // Batch embedding generation in chunks of 16 to keep memory smooth
-    const BATCH_SIZE = 16;
-    let lastReportedPct = 60;
+    // Conservative batch size (default 8) to maintain low RAM ceiling on Render Free
+    const BATCH_SIZE = parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 8;
     for (let i = 0; i < chunksToInsert.length; i += BATCH_SIZE) {
       const batch = chunksToInsert.slice(i, i + BATCH_SIZE);
       const textsToEmbed = batch.map((c) => c.rawTextForEmbedding);
@@ -139,6 +145,9 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         delete batch[j].rawTextForEmbedding;
       }
 
+      // Persist chunk embeddings incrementally per batch to avoid accumulating large vector arrays in RAM
+      await CodeChunk.insertMany(batch, { ordered: false });
+
       const processedCount = Math.min(i + BATCH_SIZE, chunksToInsert.length);
       const pct = Math.min(85, Math.round(60 + (processedCount / chunksToInsert.length) * 25));
       await updateCodebaseProgress(
@@ -148,14 +157,14 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
         'embedding',
         `Computing embeddings: ${processedCount} of ${chunksToInsert.length} code chunks (${pct}%)...`
       );
+
+      // Clean local batch references and yield event loop
+      batch.length = 0;
+      await new Promise((resolve) => setImmediate(resolve));
     }
 
     // 4. INDEXING (85%)
     await updateCodebaseProgress(codebaseId, 'indexing', 85, 'indexing', 'Persisting vector indexes and cross-file relationships...');
-
-    if (chunksToInsert.length > 0) {
-      await CodeChunk.insertMany(chunksToInsert, { ordered: false });
-    }
 
     if (relationshipsToInsert.length > 0) {
       await CodeRelationship.insertMany(relationshipsToInsert, { ordered: false });
@@ -179,8 +188,10 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
       },
       errorMessage: null,
     });
+    logMemory('CodebaseIndexing:Done', { codebaseId, totalChunks: chunksToInsert.length });
   } catch (err) {
     console.error(`[Indexing Error] Repository ${codebaseId} indexing failed:`, err);
+    logMemory('CodebaseIndexing:Failed', { codebaseId, error: err.message });
     await Codebase.findByIdAndUpdate(codebaseId, {
       status: 'failed',
       progress: {
@@ -208,6 +219,7 @@ export async function processAndIndexRepository(codebaseId, tempExtractDir, root
       }
     }
   }
+  }, { type: 'codebase_indexing', codebaseId });
 }
 
 /**

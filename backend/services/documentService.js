@@ -1,3 +1,5 @@
+import { enqueueHeavyJob } from '../utils/heavyJobQueue.js';
+import { logMemory } from '../utils/memoryDiagnostics.js';
 import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
@@ -138,7 +140,9 @@ async function extractTextFromFile(file, ext) {
   } else {
     throw new Error('No readable file content found on disk or buffer.');
   }
-  return extractTextFromBuffer(buffer, ext);
+  const result = await extractTextFromBuffer(buffer, ext);
+  buffer = null; // Release buffer from memory immediately
+  return result;
 }
 
 /**
@@ -186,16 +190,18 @@ export async function createInitialDocumentRecord(file, userId = null) {
  * @param {string|mongoose.Types.ObjectId|null} [userId=null]
  */
 export async function processDocumentBackground(docId, filePath, originalName, userId = null) {
-  const docRecord = await Document.findById(docId);
-  if (!docRecord) {
-    if (filePath) await cleanupTempFile(filePath);
-    return;
-  }
+  return enqueueHeavyJob(async () => {
+    logMemory('DocumentIngestion:Start', { docId, file: originalName });
+    const docRecord = await Document.findById(docId);
+    if (!docRecord) {
+      if (filePath) await cleanupTempFile(filePath);
+      return;
+    }
 
-  const ext = originalName.split('.').pop().toLowerCase();
-  const parsedUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
+    const ext = originalName.split('.').pop().toLowerCase();
+    const parsedUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
 
-  try {
+    try {
     // 1. Extract text from disk
     const { text, pageCount } = await extractTextFromFile({ path: filePath }, ext);
     docRecord.extractedText = text;
@@ -253,8 +259,10 @@ export async function processDocumentBackground(docId, filePath, originalName, u
       docRecord.errorMessage = null;
       await docRecord.save();
     }
+    logMemory('DocumentIngestion:Done', { docId, chunks: chunkTexts.length });
   } catch (error) {
     console.error(`[Background Document Processing Failed] ${docId}:`, error);
+    logMemory('DocumentIngestion:Failed', { docId, error: error.message });
     try {
       await DocumentChunk.deleteMany({ documentId: docRecord._id });
       docRecord.status = 'failed';
@@ -268,6 +276,7 @@ export async function processDocumentBackground(docId, filePath, originalName, u
       await cleanupTempFile(filePath);
     }
   }
+  }, { type: 'document_ingestion', docId });
 }
 
 /**
@@ -580,7 +589,8 @@ export async function getAllDocuments(userId = null, options = null) {
   const docs = await Document.find(query)
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
-    .limit(limit);
+    .limit(limit)
+    .lean();
 
   // Attach pagination metadata directly to the array
   docs.pagination = {
@@ -726,10 +736,12 @@ export async function retrieveRelevantChunks(question, documentIds = [], topK = 
     }
   }
 
-  // 2. Fetch candidate chunks from database (strictly bounded by chunkFilter)
-  const storedChunks = await DocumentChunk.find(chunkFilter).select(
-    'documentId chunkIndex text embedding originalName'
-  );
+  logMemory('DocumentRAG:RetrieveStart', { filterKeys: Object.keys(chunkFilter).join(',') });
+  // 2. Fetch candidate chunks from database (strictly bounded by chunkFilter, plain lean objects)
+  const storedChunks = await DocumentChunk.find(chunkFilter)
+    .select('documentId chunkIndex text embedding originalName')
+    .lean();
+  logMemory('DocumentRAG:RetrieveDone', { count: storedChunks.length });
 
   if (storedChunks.length === 0) {
     return {

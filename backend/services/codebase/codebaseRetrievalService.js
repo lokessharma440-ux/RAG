@@ -1,3 +1,4 @@
+import { logMemory } from '../../utils/memoryDiagnostics.js';
 import { CodeChunk } from '../../models/CodeChunk.js';
 import { generateEmbeddings } from '../../RAG/embeddingGenerator.js';
 import { cosineSimilarity } from '../../RAG/vectorStore.js';
@@ -26,10 +27,14 @@ export async function retrieveRelevantCodeChunks(question, repositoryId, ownerUs
   }
 
   // 1. Fetch candidate chunks bounded strictly to this repository and user
+  logMemory('CodebaseRAG:RetrieveStart', { repositoryId });
   const storedChunks = await CodeChunk.find({
     repositoryId,
     ownerUserId,
-  }).select('relativePath language chunkType symbolName startLine endLine content embedding');
+  })
+    .select('relativePath language chunkType symbolName startLine endLine content embedding')
+    .lean();
+  logMemory('CodebaseRAG:RetrieveDone', { count: storedChunks.length });
 
   if (storedChunks.length === 0) {
     return {

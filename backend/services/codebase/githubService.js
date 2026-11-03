@@ -1,3 +1,6 @@
+import { pipeline as streamPipeline } from 'stream/promises';
+import { Readable } from 'stream';
+import { logMemory } from '../../utils/memoryDiagnostics.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -187,11 +190,20 @@ export async function downloadGitHubArchive(owner, repo, branch = 'main', destDi
       });
 
       if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        await fs.promises.writeFile(destPath, buffer);
+        logMemory('GitHub:DownloadStreamStart', { owner, repo });
+        const fileStream = fs.createWriteStream(destPath);
+        if (res.body && typeof res.body.pipe === 'function') {
+          await streamPipeline(res.body, fileStream);
+        } else if (res.body) {
+          await streamPipeline(Readable.fromWeb(res.body), fileStream);
+        } else {
+          const arrayBuffer = await res.arrayBuffer();
+          await fs.promises.writeFile(destPath, Buffer.from(arrayBuffer));
+        }
         downloaded = true;
         clearTimeout(timeout);
+        const stats = await fs.promises.stat(destPath);
+        logMemory('GitHub:DownloadStreamDone', { owner, repo, sizeBytes: stats.size });
         break;
       }
       lastStatus = res.status;

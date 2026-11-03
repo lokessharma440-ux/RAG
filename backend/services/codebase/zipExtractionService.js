@@ -1,3 +1,4 @@
+import { logMemory } from '../../utils/memoryDiagnostics.js';
 import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
@@ -110,8 +111,12 @@ export async function validateAndExtractZip(zipFilePath, extractToDir) {
     await fs.promises.mkdir(canonicalTargetDir, { recursive: true });
   }
 
+  logMemory('Zip:ExtractStart', { entriesCount: entries.length, totalBytes: totalUncompressedBytes });
   // Extract all entries safely
   zip.extractAllTo(canonicalTargetDir, true);
+  // Release AdmZip instance from memory immediately
+  zip = null;
+  logMemory('Zip:ExtractDone', { targetDir: canonicalTargetDir.split(/[\\/]/).pop() });
 
   // Detect root folder prefix if GitHub or tool wrapped repository in a single top-level folder
   let rootPrefix = '';

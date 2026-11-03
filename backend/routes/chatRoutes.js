@@ -1,3 +1,4 @@
+import { logMemory } from '../utils/memoryDiagnostics.js';
 import express from 'express';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 import { queryDocumentRAG } from '../services/documentService.js';
@@ -38,6 +39,7 @@ router.post('/', async (req, res) => {
     });
   }
 
+  logMemory('RAG:RequestStart', { userId: req.user._id, hasDocIds: Boolean(documentIds) });
   try {
     const conversationHistory = Array.isArray(body.conversationHistory)
       ? body.conversationHistory
@@ -53,6 +55,7 @@ router.post('/', async (req, res) => {
       { conversationHistory }
     );
 
+    logMemory('RAG:RequestDone', { userId: req.user._id, cached: result.cached || false });
     return res.json({
       success: true,
       data: {
