@@ -1,3 +1,4 @@
+const serverStartTime = Date.now();
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -13,6 +14,7 @@ import {
 } from '../services/codebase/githubService.js';
 import {
   validateAndExtractZip,
+  cleanupDirectory,
   ZIP_LIMITS,
 } from '../services/codebase/zipExtractionService.js';
 import {
@@ -231,7 +233,9 @@ router.get('/', async (req, res) => {
         ['queued', 'fetching', 'extracting', 'discovering_files', 'parsing', 'chunking', 'embedding', 'indexing'].includes(cb.status)
       ) {
         const lastUpdated = cb.updatedAt ? new Date(cb.updatedAt).getTime() : 0;
-        if (now - lastUpdated > 3 * 60 * 1000) {
+        const isStaleFromPreviousBoot = lastUpdated < serverStartTime - 5000;
+        const isInactiveOverdue = now - lastUpdated > 15 * 60 * 1000;
+        if (isStaleFromPreviousBoot || isInactiveOverdue) {
           cb.status = 'failed';
           cb.errorMessage = 'Indexing process was interrupted by server redeployment. Please delete and re-import.';
           cb.progress = { stage: 'failed', percentage: 0, message: cb.errorMessage };

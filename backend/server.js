@@ -62,6 +62,12 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+      if (
+        process.env.ALLOW_VERCEL_PREVIEWS === 'true' &&
+        /^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
       const corsError = new Error(`CORS policy blocked access from origin: ${origin}`);
       corsError.status = 403;
       return callback(corsError);

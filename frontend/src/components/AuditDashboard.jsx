@@ -5,7 +5,7 @@ import {
   Download, GitPullRequest, RefreshCw, Sparkles, FileText,
   Lock, Database, TestTube2, Rocket, Cpu, Eye, Edit3,
   Copy, Check, ExternalLink, Clock, ArrowLeft, BarChart2,
-  AlertCircle, Archive
+  AlertCircle, Archive, X
 } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
 import FixPromptModal from './FixPromptModal.jsx';

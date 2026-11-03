@@ -35,13 +35,16 @@ export async function generateCodebaseDocumentation(repositoryId, ownerUserId, d
       break;
   }
 
+  const termRegex = new RegExp(queryTerms.join('|'), 'i');
+
   // Retrieve relevant structural chunks
   const chunks = await CodeChunk.find({
     repositoryId,
     ownerUserId,
     $or: [
       { chunkType: { $in: ['route', 'class', 'function', 'config'] } },
-      { relativePath: { $regex: /(?:server|app|route|model|config)/i } },
+      { relativePath: { $regex: termRegex } },
+      { symbolName: { $regex: termRegex } },
     ],
   })
     .limit(15)

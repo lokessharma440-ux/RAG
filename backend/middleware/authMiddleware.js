@@ -1,7 +1,11 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_fallback_key_rag_chat';
+export function getJwtSecret() {
+  return process.env.JWT_SECRET || 'dev_jwt_secret_fallback_key_rag_chat';
+}
 const TOKEN_EXPIRY = '7d';
 
 /**
@@ -30,7 +34,7 @@ export function signAuthToken(user) {
     email: user.email,
     role: user.role || 'user',
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: TOKEN_EXPIRY });
 }
 
 /**
@@ -69,7 +73,7 @@ export async function authenticateUser(req, res, next) {
 
     for (const token of candidateTokens) {
       try {
-        decoded = jwt.verify(token, JWT_SECRET);
+        decoded = jwt.verify(token, getJwtSecret());
         break; // Successfully verified
       } catch (err) {
         lastError = err;
